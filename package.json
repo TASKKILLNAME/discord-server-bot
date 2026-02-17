@@ -1,0 +1,29 @@
+{
+  "name": "discord-server-manager-bot",
+  "version": "1.0.0",
+  "description": "디스코드 서버를 원하는대로 자동 구성해주는 봇",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "deploy-commands": "node src/deploy-commands.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@discordjs/opus": "^0.9.0",
+    "@discordjs/voice": "^0.17.0",
+    "@snazzah/davey": "^0.1.0",
+    "axios": "^1.7.2",
+    "cheerio": "^1.0.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "cors": "^2.8.5",
+    "node-cron": "^3.0.3",
+    "sodium-native": "^4.3.1"
+  }
+}

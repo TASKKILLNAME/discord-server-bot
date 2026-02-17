@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Bot - Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Noto Sans KR', -apple-system, sans-serif;
+      background: radial-gradient(ellipse at 50% 0%, #13141f 0%, #0d0e17 50%, #080810 100%);
+      color: #e2e4f0;
+      min-height: 100vh;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2d2f45; border-radius: 3px; }
+    a { color: inherit; text-decoration: none; }
+
+    /* Login Page */
+    .login-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-card {
+      text-align: center;
+      padding: 48px;
+      background: linear-gradient(135deg, #13141f88, #1a1b2e88);
+      border-radius: 24px;
+      border: 1px solid #2d2f4566;
+      backdrop-filter: blur(20px);
+      max-width: 420px;
+      width: 90%;
+    }
+    .login-icon {
+      width: 80px; height: 80px; border-radius: 24px;
+      background: linear-gradient(135deg, #5865F2, #7c3aed);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 40px; margin: 0 auto 24px;
+      box-shadow: 0 8px 32px #5865F244;
+    }
+    .login-btn {
+      width: 100%; padding: 14px 24px; border-radius: 12px;
+      border: none; background: linear-gradient(135deg, #5865F2, #4752c4);
+      color: #fff; font-size: 15px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      box-shadow: 0 4px 16px #5865F233;
+      transition: transform 0.1s;
+    }
+    .login-btn:hover { transform: translateY(-1px); }
+
+    /* Layout */
+    .layout { display: flex; min-height: 100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width: 240px; position: fixed; left: 0; top: 0; height: 100vh;
+      background: linear-gradient(180deg, #13141f 0%, #0d0e17 100%);
+      border-right: 1px solid #1d1f33;
+      display: flex; flex-direction: column; z-index: 100;
+    }
+    .sidebar-logo { padding: 24px 20px; border-bottom: 1px solid #1d1f33; }
+    .sidebar-server { padding: 16px 20px; border-bottom: 1px solid #1d1f33; }
+    .sidebar-nav { padding: 12px 12px; flex: 1; overflow-y: auto; }
+    .sidebar-footer { padding: 16px 20px; border-top: 1px solid #1d1f33; }
+
+    .nav-label {
+      font-size: 10px; color: #5d5f7a; text-transform: uppercase;
+      letter-spacing: 1.5px; margin-bottom: 8px; padding: 0 8px; font-weight: 700;
+    }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 10px; cursor: pointer;
+      margin-bottom: 2px; border-left: 3px solid transparent;
+      transition: all 0.15s ease; font-size: 13px; color: #8b8db3;
+    }
+    .nav-item:hover { background: #ffffff08; }
+    .nav-item.active {
+      background: linear-gradient(135deg, #5865F220, #7c3aed15);
+      border-left-color: #5865F2; color: #fff; font-weight: 700;
+    }
+
+    /* Main Content */
+    .main { margin-left: 240px; padding: 32px 40px; flex: 1; }
+
+    /* Cards */
+    .card {
+      background: linear-gradient(135deg, #1e1f2e 0%, #252640 100%);
+      border-radius: 16px; padding: 24px; border: 1px solid #2d2f45;
+    }
+    .card-title { font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 16px; }
+
+    /* Stat Cards */
+    .stats-grid { display: flex; gap: 16px; margin-bottom: 28px; flex-wrap: wrap; }
+    .stat-card { flex: 1; min-width: 180px; }
+    .stat-value { font-size: 28px; font-weight: 800; color: #fff; font-family: 'JetBrains Mono', monospace; }
+    .stat-label { font-size: 12px; color: #8b8db3; margin-top: 4px; }
+    .stat-change { font-size: 12px; font-weight: 600; }
+    .stat-change.up { color: #43b581; }
+    .stat-change.down { color: #f04747; }
+
+    /* Lists */
+    .list-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; background: #1a1b2e; border-radius: 10px;
+      margin-bottom: 4px; border: 1px solid #1d1f33;
+      transition: background 0.15s;
+    }
+    .list-item:hover { background: #1f2038; }
+
+    /* Badges */
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 12px;
+      font-size: 11px; font-weight: 600;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 16px; border-radius: 8px; border: none;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-primary { background: linear-gradient(135deg, #5865F2, #7c3aed); color: #fff; }
+    .btn-success { background: #43b581; color: #fff; }
+    .btn-danger { background: transparent; border: 1px solid #f0474733; color: #f04747; }
+    .btn-warning { background: transparent; border: 1px solid #faa61a44; color: #faa61a; }
+    .btn:hover { transform: translateY(-1px); }
+
+    /* Inputs */
+    .input {
+      padding: 10px 14px; border-radius: 8px; border: 1px solid #2d2f45;
+      background: #161726; color: #fff; font-size: 13px; outline: none;
+      font-family: inherit; transition: border-color 0.15s;
+    }
+    .input:focus { border-color: #5865F2; }
+
+    /* Toggle */
+    .toggle {
+      width: 44px; height: 24px; border-radius: 12px;
+      cursor: pointer; position: relative; transition: background 0.2s;
+    }
+    .toggle.on { background: #43b581; }
+    .toggle.off { background: #4d4f6a; }
+    .toggle-knob {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #fff; position: absolute; top: 3px;
+      transition: left 0.2s;
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; right: 24px;
+      padding: 12px 24px; background: #1e1f2e;
+      border: 1px solid #43b58144; border-radius: 12px;
+      color: #43b581; font-size: 13px; font-weight: 600;
+      z-index: 1000; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Loading */
+    .loading {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 200px; color: #5d5f7a; font-size: 14px;
+    }
+    .spinner {
+      width: 24px; height: 24px; border: 3px solid #2d2f45;
+      border-top-color: #5865F2; border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin-right: 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Status dot */
+    .status-dot {
+      display: inline-block; width: 10px; height: 10px;
+      border-radius: 50%; margin-right: 6px;
+    }
+    .status-online { background: #43b581; }
+    .status-idle { background: #faa61a; }
+    .status-dnd { background: #f04747; }
+    .status-offline { background: #747f8d; }
+
+    /* Avatar */
+    .avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+
+    /* Grid */
+    .grid-2 { display: flex; gap: 20px; flex-wrap: wrap; }
+    .grid-2 > * { flex: 1; min-width: 300px; }
+
+    .page-title { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 4px; }
+    .page-desc { color: #6b6d8a; font-size: 13px; margin-bottom: 24px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // ============================================
+    // Vanilla JS Dashboard (no build step needed)
+    // ============================================
+
+    const API_BASE = '';
+    let currentUser = null;
+    let currentGuild = null;
+    let activeTab = 'dashboard';
+
+    // ============================================
+    // API Helper
+    // ============================================
+    async function api(endpoint, options = {}) {
+      const res = await fetch(API_BASE + endpoint, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+
+    // ============================================
+    // Toast
+    // ============================================
+    function showToast(msg) {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2500);
+    }
+
+    // ============================================
+    // Login Page
+    // ============================================
+    function renderLogin() {
+      return `
+        <div class="login-page">
+          <div class="login-card">
+            <div class="login-icon">🤖</div>
+            <h1 style="font-size:28px;font-weight:800;color:#fff;margin-bottom:8px">Admin Bot</h1>
+            <p style="font-size:14px;color:#6b6d8a;margin-bottom:32px;line-height:1.6">
+              디스코드 서버를 웹에서 관리하세요
+            </p>
+            <a href="/auth/discord" class="login-btn">
+              <svg width="20" height="15" viewBox="0 0 71 55" fill="none">
+                <path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A37.4 37.4 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.6 4.9a.2.2 0 00-.1.1C1.5 18.7-.9 32 .3 45.2v.1a58.7 58.7 0 0017.9 9 .2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.7 38.7 0 01-5.5-2.6.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 41.9 41.9 0 0035.6 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .4 36.3 36.3 0 01-5.5 2.6.2.2 0 00-.1.3 47.2 47.2 0 003.6 5.9.2.2 0 00.3.1 58.5 58.5 0 0018-9v-.1c1.4-14.8-2.3-27.7-9.9-39.1a.2.2 0 00-.1-.1zM23.7 37.1c-3.4 0-6.2-3.1-6.2-6.9s2.7-6.9 6.2-6.9 6.3 3.1 6.2 6.9c0 3.8-2.8 6.9-6.2 6.9zm22.9 0c-3.4 0-6.2-3.1-6.2-6.9s2.7-6.9 6.2-6.9 6.3 3.1 6.2 6.9c0 3.8-2.7 6.9-6.2 6.9z" fill="white"/>
+              </svg>
+              Discord로 로그인
+            </a>
+            <p style="font-size:11px;color:#4d4f6a;margin-top:16px">서버 관리자 권한이 필요합니다</p>
+          </div>
+        </div>
+      `;
+    }
+
+    // ============================================
+    // Sidebar
+    // ============================================
+    function renderSidebar() {
+      const tabs = [
+        { id: 'dashboard', icon: '📊', label: '대시보드' },
+        { id: 'channels', icon: '📝', label: '채널 관리' },
+        { id: 'roles', icon: '👤', label: '역할 관리' },
+        { id: 'members', icon: '👥', label: '멤버 관리' },
+        { id: 'templates', icon: '🛠️', label: '서버 구성' },
+        { id: 'patchnotes', icon: '📰', label: '패치노트' },
+        { id: 'tts', icon: '🔊', label: 'TTS' },
+        { id: 'settings', icon: '⚙️', label: '설정' },
+      ];
+
+      const guildName = currentGuild?.name || '서버 선택';
+      const username = currentUser?.username || 'User';
+
+      return `
+        <div class="sidebar">
+          <div class="sidebar-logo">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#5865F2,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:20px">🤖</div>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#fff">Admin Bot</div>
+                <div style="font-size:11px;color:#43b581">● 온라인</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sidebar-server">
+            <div class="nav-label">서버</div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#1a1b2e">
+              <div style="width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#f59e0b,#ef4444);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff">
+                ${guildName[0]}
+              </div>
+              <div style="font-size:13px;font-weight:600;color:#e2e4f0">${guildName}</div>
+            </div>
+          </div>
+
+          <div class="sidebar-nav">
+            <div class="nav-label">메뉴</div>
+            ${tabs.map(t => `
+              <div class="nav-item ${activeTab === t.id ? 'active' : ''}" onclick="navigate('${t.id}')">
+                <span style="font-size:16px">${t.icon}</span>
+                <span>${t.label}</span>
+              </div>
+            `).join('')}
+          </div>
+
+          <div class="sidebar-footer">
+            <div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#43b581,#3498db);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff">
+                  ${username[0]}
+                </div>
+                <div>
+                  <div style="font-size:12px;font-weight:600;color:#e2e4f0">${username}</div>
+                  <div style="font-size:10px;color:#5d5f7a">관리자</div>
+                </div>
+              </div>
+              <button onclick="logout()" style="background:none;border:none;color:#5d5f7a;cursor:pointer;font-size:16px" title="로그아웃">🚪</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ============================================
+    // Page Renderers
+    // ============================================
+
+    async function renderDashboard() {
+      let stats = { totalMembers: 0, onlineMembers: 0, channelCount: 0, roleCount: 0, boostCount: 0, boostLevel: 0 };
+
+      if (currentGuild) {
+        try {
+          stats = await api(`/api/guilds/${currentGuild.id}/stats`);
+        } catch (e) { console.error(e); }
+      }
+
+      return `
+        <h2 class="page-title">대시보드</h2>
+        <p class="page-desc">서버 현황을 한눈에 확인하세요</p>
+
+        <div class="stats-grid">
+          <div class="card stat-card">
+            <div style="font-size:24px;margin-bottom:8px">👥</div>
+            <div class="stat-value">${stats.totalMembers}</div>
+            <div class="stat-label">총 멤버</div>
+          </div>
+          <div class="card stat-card">
+            <div style="font-size:24px;margin-bottom:8px">🟢</div>
+            <div class="stat-value">${stats.onlineMembers}</div>
+            <div class="stat-label">온라인</div>
+          </div>
+          <div class="card stat-card">
+            <div style="font-size:24px;margin-bottom:8px">📝</div>
+            <div class="stat-value">${stats.channelCount}</div>
+            <div class="stat-label">채널 수</div>
+          </div>
+          <div class="card stat-card">
+            <div style="font-size:24px;margin-bottom:8px">👤</div>
+            <div class="stat-value">${stats.roleCount}</div>
+            <div class="stat-label">역할 수</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📊 서버 정보</div>
+          ${currentGuild ? `
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;justify-content:space-between"><span style="color:#8b8db3">서버 이름</span><span style="font-weight:600">${currentGuild.name}</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#8b8db3">부스트</span><span style="font-weight:600">레벨 ${stats.boostLevel} (${stats.boostCount}개)</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#8b8db3">서버 ID</span><span style="font-weight:600;font-family:'JetBrains Mono',monospace;font-size:12px">${currentGuild.id}</span></div>
+            </div>
+          ` : '<div style="color:#5d5f7a">서버를 선택해주세요</div>'}
+        </div>
+      `;
+    }
+
+    async function renderChannels() {
+      if (!currentGuild) return '<div class="card"><p style="color:#faa61a">⚠️ 서버가 선택되지 않았습니다.</p></div>';
+
+      let channels = [];
+      try { channels = await api(`/api/guilds/${currentGuild.id}/channels`); }
+      catch (e) { return `<div class="card"><p style="color:#f04747">❌ ${e.message}</p></div>`; }
+
+      // Group by category
+      const categories = {};
+      channels.forEach(ch => {
+        const cat = ch.parentName || '기타';
+        if (!categories[cat]) categories[cat] = [];
+        categories[cat].push(ch);
+      });
+
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+          <div>
+            <h2 class="page-title">채널 관리</h2>
+            <p class="page-desc">총 ${channels.length}개 채널</p>
+          </div>
+          <button class="btn btn-primary" onclick="createChannelPrompt()">+ 채널 생성</button>
+        </div>
+
+        ${Object.entries(categories).map(([cat, chs]) => `
+          <div style="margin-bottom:20px">
+            <div style="font-size:12px;font-weight:700;color:#5d5f7a;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">${cat}</div>
+            ${chs.map(ch => `
+              <div class="list-item">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span>${ch.type === 2 ? '🔊' : '#'}</span>
+                  <span style="font-weight:600">${ch.name}</span>
+                </div>
+                <button class="btn btn-danger" style="padding:4px 12px;font-size:11px" onclick="deleteChannel('${ch.id}')">삭제</button>
+              </div>
+            `).join('')}
+          </div>
+        `).join('')}
+      `;
+    }
+
+    async function renderRoles() {
+      if (!currentGuild) return '<div class="card"><p style="color:#faa61a">⚠️ 서버가 선택되지 않았습니다.</p></div>';
+
+      let roles = [];
+      try { roles = await api(`/api/guilds/${currentGuild.id}/roles`); }
+      catch (e) { return `<div class="card"><p style="color:#f04747">❌ ${e.message}</p></div>`; }
+
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+          <div>
+            <h2 class="page-title">역할 관리</h2>
+            <p class="page-desc">총 ${roles.length}개 역할</p>
+          </div>
+          <button class="btn btn-primary" onclick="createRolePrompt()">+ 역할 생성</button>
+        </div>
+
+        ${roles.map(r => `
+          <div class="list-item">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div style="width:16px;height:16px;border-radius:50%;background:${r.color};flex-shrink:0"></div>
+              <span style="font-weight:600">${r.name}</span>
+              <span class="badge" style="background:#8b8db322;color:#8b8db3;border:1px solid #8b8db344">${r.members}명</span>
+              ${r.permissions.includes('Administrator') ? '<span class="badge" style="background:#f0474722;color:#f04747;border:1px solid #f0474744">관리자</span>' : ''}
+            </div>
+            <button class="btn btn-danger" style="padding:4px 12px;font-size:11px" onclick="deleteRole('${r.id}')">삭제</button>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    async function renderMembers() {
+      if (!currentGuild) {
+        return '<div class="card"><p style="color:#faa61a">⚠️ 서버가 선택되지 않았습니다. 다시 로그인해주세요.</p></div>';
+      }
+
+      let members = [];
+      try {
+        members = await api(`/api/guilds/${currentGuild.id}/members`);
+        console.log(`멤버 ${members.length}명 로드됨`);
+      } catch (e) {
+        console.error('멤버 로드 실패:', e);
+        return `<div class="card"><p style="color:#f04747">❌ 멤버 로드 실패: ${e.message}</p></div>`;
+      }
+
+      return `
+        <h2 class="page-title">멤버 관리</h2>
+        <p class="page-desc">총 ${members.length}명</p>
+
+        <input class="input" id="memberSearch" placeholder="🔍 멤버 검색..." style="width:100%;margin-bottom:20px" oninput="filterMembers()">
+
+        <div id="memberList">
+          ${members.map(m => `
+            <div class="list-item member-item" data-name="${m.displayName.toLowerCase()}">
+              <div style="display:flex;align-items:center;gap:12px">
+                <div class="avatar" style="background:linear-gradient(135deg,#5865F2,#7c3aed)">
+                  ${m.avatar ? `<img src="${m.avatar}" style="width:36px;height:36px;border-radius:50%">` : m.displayName[0]}
+                </div>
+                <div>
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span class="status-dot status-${m.status}"></span>
+                    <span style="font-weight:600">${m.displayName}</span>
+                  </div>
+                  <div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+                    ${m.roles.slice(0, 3).map(r => `<span class="badge" style="background:${r.color}22;color:${r.color};border:1px solid ${r.color}44">${r.name}</span>`).join('')}
+                    ${m.roles.length > 3 ? `<span class="badge" style="background:#5d5f7a22;color:#5d5f7a;border:1px solid #5d5f7a44">+${m.roles.length - 3}</span>` : ''}
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-warning" style="padding:4px 10px;font-size:11px" onclick="timeoutMember('${m.id}')">타임아웃</button>
+                <button class="btn btn-danger" style="padding:4px 10px;font-size:11px" onclick="kickMember('${m.id}')">킥</button>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    function renderTemplates() {
+      const templates = [
+        { id: 'gaming', name: '🎮 게임 커뮤니티', desc: '롤, 발로, 마크 등 게임 채널 + 음성방', cats: 4, chs: 18, roles: 5 },
+        { id: 'study', name: '📚 스터디 그룹', desc: '자료공유, TIL, 스터디룸', cats: 4, chs: 14, roles: 4 },
+        { id: 'project', name: '🏢 프로젝트 팀', desc: '백엔드/프론트 채널, 스크럼, Git 로그', cats: 5, chs: 17, roles: 5 },
+        { id: 'community', name: '🎵 커뮤니티', desc: '취미/관심사 커뮤니티', cats: 4, chs: 16, roles: 4 },
+        { id: 'business', name: '🏪 비즈니스', desc: '쇼핑몰/브랜드 커뮤니티', cats: 4, chs: 14, roles: 4 },
+      ];
+
+      return `
+        <h2 class="page-title">서버 구성</h2>
+        <p class="page-desc">템플릿으로 서버를 원클릭 구성합니다</p>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+          ${templates.map(t => `
+            <div class="card">
+              <div style="font-size:24px;margin-bottom:12px">${t.name.split(' ')[0]}</div>
+              <div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:8px">${t.name}</div>
+              <div style="font-size:12px;color:#6b6d8a;margin-bottom:16px">${t.desc}</div>
+              <div style="display:flex;gap:8px;margin-bottom:16px">
+                <span class="badge" style="background:#5865F222;color:#5865F2;border:1px solid #5865F244">${t.cats}개 카테고리</span>
+                <span class="badge" style="background:#43b58122;color:#43b581;border:1px solid #43b58144">${t.chs}개 채널</span>
+              </div>
+              <button class="btn btn-primary" style="width:100%" onclick="applyTemplate('${t.id}')">🛠️ 적용</button>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    async function renderPatchNotes() {
+      let status = {};
+      try { status = await api('/api/patchnotes/status'); } catch (e) {}
+
+      return `
+        <h2 class="page-title">패치노트 관리</h2>
+        <p class="page-desc">게임별 패치노트 자동 알림을 관리합니다</p>
+
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span style="font-size:28px">🎮</span>
+              <div>
+                <div style="font-size:15px;font-weight:700;color:#fff">리그 오브 레전드</div>
+                <div style="font-size:11px;color:#6b6d8a;margin-top:2px">
+                  마지막: ${status.lastTitle || '기록 없음'}
+                </div>
+              </div>
+            </div>
+            <span class="badge" style="background:${status.aiEnabled ? '#43b58122' : '#6b6d8a22'};color:${status.aiEnabled ? '#43b581' : '#6b6d8a'};border:1px solid ${status.aiEnabled ? '#43b58144' : '#6b6d8a44'}">
+              AI 요약 ${status.aiEnabled ? 'ON' : 'OFF'}
+            </span>
+          </div>
+          <div style="margin-top:12px">
+            <button class="btn btn-primary" onclick="checkPatchNotes()">📰 최신 패치노트 가져오기</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSettings() {
+      return `
+        <h2 class="page-title">설정</h2>
+        <p class="page-desc">봇 설정을 관리합니다</p>
+
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-title">⚙️ 서버 설정</div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="color:#8b8db3">서버 이름 변경</span>
+              <div style="display:flex;gap:8px">
+                <input class="input" id="serverName" placeholder="새 서버 이름" style="width:200px">
+                <button class="btn btn-success" onclick="changeServerName()">변경</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🤖 봇 정보</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;justify-content:space-between"><span style="color:#8b8db3">봇 버전</span><span style="font-weight:600">1.0.0</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#8b8db3">discord.js</span><span style="font-weight:600">v14</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#8b8db3">Node.js</span><span style="font-weight:600">${typeof process !== 'undefined' ? 'Server' : 'Client'}</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ============================================
+    // Action Handlers
+    // ============================================
+
+    async function createChannelPrompt() {
+      const name = prompt('채널 이름:');
+      if (!name) return;
+      const type = confirm('음성 채널? (취소 = 텍스트)') ? 2 : 0;
+      try {
+        await api(`/api/guilds/${currentGuild.id}/channels`, {
+          method: 'POST',
+          body: JSON.stringify({ name, type }),
+        });
+        showToast('✅ 채널이 생성되었습니다!');
+        render();
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function deleteChannel(id) {
+      if (!confirm('정말 삭제하시겠습니까?')) return;
+      try {
+        await api(`/api/guilds/${currentGuild.id}/channels/${id}`, { method: 'DELETE' });
+        showToast('🗑️ 채널이 삭제되었습니다!');
+        render();
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function createRolePrompt() {
+      const name = prompt('역할 이름:');
+      if (!name) return;
+      const color = prompt('색상 코드 (예: #FF0000):', '#5865F2') || '#5865F2';
+      try {
+        await api(`/api/guilds/${currentGuild.id}/roles`, {
+          method: 'POST',
+          body: JSON.stringify({ name, color }),
+        });
+        showToast('✅ 역할이 생성되었습니다!');
+        render();
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function deleteRole(id) {
+      if (!confirm('정말 삭제하시겠습니까?')) return;
+      try {
+        await api(`/api/guilds/${currentGuild.id}/roles/${id}`, { method: 'DELETE' });
+        showToast('🗑️ 역할이 삭제되었습니다!');
+        render();
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function kickMember(id) {
+      if (!confirm('정말 추방하시겠습니까?')) return;
+      try {
+        await api(`/api/guilds/${currentGuild.id}/members/${id}/kick`, { method: 'POST' });
+        showToast('👢 멤버가 추방되었습니다!');
+        render();
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function timeoutMember(id) {
+      const min = prompt('타임아웃 시간 (분):', '5');
+      if (!min) return;
+      try {
+        await api(`/api/guilds/${currentGuild.id}/members/${id}/timeout`, {
+          method: 'POST',
+          body: JSON.stringify({ minutes: parseInt(min) }),
+        });
+        showToast('⏰ 타임아웃 적용!');
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function applyTemplate(id) {
+      const clear = confirm('⚠️ 기존 채널을 삭제하고 구성할까요?\n(취소 = 기존 유지하고 추가)');
+      try {
+        const result = await api(`/api/guilds/${currentGuild.id}/setup`, {
+          method: 'POST',
+          body: JSON.stringify({ templateId: id, clearExisting: clear }),
+        });
+        showToast(`✅ 템플릿 적용 완료! (역할 ${result.roles}개, 채널 ${result.channels}개)`);
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function checkPatchNotes() {
+      showToast('🔍 패치노트 확인 중...');
+      try {
+        const channelId = prompt('패치노트를 보낼 채널 ID:');
+        if (!channelId) return;
+        await api(`/api/guilds/${currentGuild.id}/patchnotes/check`, {
+          method: 'POST',
+          body: JSON.stringify({ channelId }),
+        });
+        showToast('✅ 패치노트 전송 완료!');
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    async function changeServerName() {
+      const name = document.getElementById('serverName')?.value;
+      if (!name) return;
+      try {
+        await api(`/api/guilds/${currentGuild.id}/settings`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name }),
+        });
+        showToast('✅ 서버 이름 변경!');
+        currentGuild.name = name;
+        render();
+      } catch (e) { showToast('❌ ' + e.message); }
+    }
+
+    function filterMembers() {
+      const q = document.getElementById('memberSearch')?.value.toLowerCase() || '';
+      document.querySelectorAll('.member-item').forEach(el => {
+        el.style.display = el.dataset.name.includes(q) ? '' : 'none';
+      });
+    }
+
+    async function logout() {
+      await api('/api/auth/logout', { method: 'POST' });
+      currentUser = null;
+      currentGuild = null;
+      render();
+    }
+
+    function navigate(tab) {
+      activeTab = tab;
+      render();
+    }
+
+    // ============================================
+    // Main Render
+    // ============================================
+    async function render() {
+      const app = document.getElementById('app');
+
+      if (!currentUser) {
+        app.innerHTML = renderLogin();
+        return;
+      }
+
+      let pageContent = '<div class="loading"><div class="spinner"></div>로딩 중...</div>';
+
+      app.innerHTML = `
+        <div class="layout">
+          ${renderSidebar()}
+          <div class="main" id="pageContent">${pageContent}</div>
+        </div>
+      `;
+
+      // Render page content
+      const pageEl = document.getElementById('pageContent');
+      try {
+        switch (activeTab) {
+          case 'dashboard': pageEl.innerHTML = await renderDashboard(); break;
+          case 'channels': pageEl.innerHTML = await renderChannels(); break;
+          case 'roles': pageEl.innerHTML = await renderRoles(); break;
+          case 'members': pageEl.innerHTML = await renderMembers(); break;
+          case 'templates': pageEl.innerHTML = renderTemplates(); break;
+          case 'patchnotes': pageEl.innerHTML = await renderPatchNotes(); break;
+          case 'settings': pageEl.innerHTML = renderSettings(); break;
+          default: pageEl.innerHTML = await renderDashboard();
+        }
+      } catch (e) {
+        pageEl.innerHTML = `<div class="card"><p style="color:#f04747">오류: ${e.message}</p></div>`;
+      }
+    }
+
+    // ============================================
+    // Init
+    // ============================================
+    async function init() {
+      try {
+        const auth = await api('/api/auth/user');
+        if (auth.loggedIn) {
+          currentUser = auth.user;
+          if (auth.user.guilds && auth.user.guilds.length > 0) {
+            currentGuild = auth.user.guilds[0];
+            console.log('✅ 로그인 성공:', currentUser.username);
+            console.log('✅ 서버:', currentGuild.name, currentGuild.id);
+          } else {
+            console.log('⚠️ 관리 가능한 서버 없음');
+          }
+        }
+      } catch (e) {
+        console.log('Not logged in:', e.message);
+      }
+      render();
+    }
+
+    init();
+  </script>
+</body>
+</html>
