@@ -50,6 +50,14 @@ module.exports = {
     ),
 
   async execute(interaction) {
+    // 클라우드 환경(Railway 등)에서는 UDP를 지원하지 않아 음성채널 사용 불가
+    if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID) {
+      return interaction.reply({
+        content: '⚠️ 현재 클라우드 환경에서 운영 중이라 TTS(음성채널) 기능을 사용할 수 없습니다.\n> 클라우드 서비스(Railway)는 UDP 연결을 지원하지 않아 음성채널 접속이 불가합니다.',
+        ephemeral: true,
+      });
+    }
+
     const subcommand = interaction.options.getSubcommand();
 
     switch (subcommand) {
