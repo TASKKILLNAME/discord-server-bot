@@ -11,6 +11,8 @@ require('dotenv').config();
 const { startPatchScheduler } = require('./services/patchScheduler');
 const { startEventScheduler } = require('./services/eventService');
 const { startDashboard } = require('../dashboard/server');
+const { handleMemberJoin, handleGameSelect } = require('./services/welcomeService');
+const { addXp, createLevelUpEmbed } = require('./services/levelService');
 
 // ============================================
 // 클라이언트 설정
@@ -95,7 +97,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 
-  // 셀렉트 메뉴 처리 (서버 구성 템플릿 선택)
+  // 셀렉트 메뉴 처리 (서버 구성 템플릿 선택 + 게임 역할 선택)
   if (interaction.isStringSelectMenu()) {
     if (interaction.customId === 'template_select') {
       const setupCommand = client.commands.get('서버구성');
@@ -105,6 +107,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         } catch (error) {
           console.error('템플릿 선택 오류:', error);
         }
+      }
+    }
+
+    // 🎮 게임 역할 선택 처리
+    if (interaction.customId === 'game_select') {
+      try {
+        await handleGameSelect(interaction);
+      } catch (error) {
+        console.error('게임 선택 오류:', error);
       }
     }
   }
@@ -145,6 +156,40 @@ client.on(Events.InteractionCreate, async (interaction) => {
         components: [],
       });
     }
+  }
+});
+
+// ============================================
+// 멤버 입장 이벤트 (환영 메시지 + 게임 선택)
+// ============================================
+client.on(Events.GuildMemberAdd, async (member) => {
+  try {
+    await handleMemberJoin(member);
+  } catch (error) {
+    console.error('환영 메시지 오류:', error);
+  }
+});
+
+// ============================================
+// 메시지 이벤트 (XP 시스템)
+// ============================================
+client.on(Events.MessageCreate, async (message) => {
+  // 봇 메시지 무시
+  if (message.author.bot) return;
+
+  // DM 무시
+  if (!message.guild) return;
+
+  try {
+    const result = addXp(message.guild.id, message.author.id);
+
+    // 🎉 레벨업 알림
+    if (result.leveledUp) {
+      const embed = createLevelUpEmbed(message.member, result.newLevel);
+      await message.channel.send({ embeds: [embed] });
+    }
+  } catch (error) {
+    console.error('XP 처리 오류:', error);
   }
 });
 
