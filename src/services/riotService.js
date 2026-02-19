@@ -95,10 +95,10 @@ async function getSummonerByPuuid(puuid) {
 }
 
 /**
- * 랭크 정보 조회
+ * 랭크 정보 조회 (PUUID 기반)
  */
-async function getSummonerRank(summonerId) {
-  const url = `${PLATFORM_URL}/lol/league/v4/entries/by-summoner/${encodeURIComponent(summonerId)}`;
+async function getRankByPuuid(puuid) {
+  const url = `${PLATFORM_URL}/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`;
   const data = await riotApiRequest(url);
   return data || [];
 }
@@ -260,9 +260,9 @@ async function fetchLiveGameData(gameName, tagLine) {
   for (const p of participants) {
     let rank = '언랭크';
     try {
-      const summoner = await getSummonerByPuuid(p.puuid);
-      if (summoner) {
-        const rankData = await getSummonerRank(summoner.id);
+      // puuid가 null인 경우 (봇 등) 스킵
+      if (p.puuid) {
+        const rankData = await getRankByPuuid(p.puuid);
         rank = formatRank(rankData);
       }
     } catch (err) {
@@ -310,7 +310,7 @@ async function fetchRecentMatchData(gameName, tagLine, count = 5) {
   let summonerLevel = 0;
 
   if (summoner) {
-    const rankData = await getSummonerRank(summoner.id);
+    const rankData = await getRankByPuuid(account.puuid);
     rank = formatRank(rankData);
     summonerLevel = summoner.summonerLevel || 0;
   }
@@ -383,7 +383,7 @@ module.exports = {
   getAccountByRiotId,
   getLiveGame,
   getSummonerByPuuid,
-  getSummonerRank,
+  getRankByPuuid,
   getRecentMatchIds,
   getMatchDetail,
   getChampionName,
