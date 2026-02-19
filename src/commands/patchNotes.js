@@ -5,7 +5,12 @@ const {
   ChannelType,
 } = require('discord.js');
 const { forceGetLatestPatch, loadLastPatch } = require('../services/patchCrawler');
-const { sendPatchToChannel } = require('../services/patchScheduler');
+const {
+  sendPatchToChannel,
+  setPatchChannel,
+  removePatchChannel,
+  getPatchChannel,
+} = require('../services/patchScheduler');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -31,6 +36,11 @@ module.exports = {
     )
     .addSubcommand((sub) =>
       sub
+        .setName('해제')
+        .setDescription('패치노트 자동 알림을 해제합니다')
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('상태')
         .setDescription('패치노트 알림 상태를 확인합니다')
     ),
@@ -43,6 +53,8 @@ module.exports = {
         return this.getLatest(interaction);
       case '설정':
         return this.setChannel(interaction);
+      case '해제':
+        return this.removeChannel(interaction);
       case '상태':
         return this.getStatus(interaction);
     }
@@ -92,35 +104,54 @@ module.exports = {
     }
   },
 
+  // ============================================
+  // ⚙️ 패치 알림 채널 설정 (서버별 JSON 저장)
+  // ============================================
   async setChannel(interaction) {
-    if (!interaction.memberPermissions.has(PermissionFlagsBits.ManageGuild)) {
-      return interaction.reply({
-        content: '❌ 서버 관리 권한이 필요합니다.',
-        ephemeral: true,
-      });
-    }
-
     const channel = interaction.options.getChannel('채널');
 
-    // 참고: 실제 운영에서는 DB에 저장하는 게 좋지만,
-    // 여기서는 환경변수 안내 + 메모리에 저장
-    process.env.LOL_PATCH_CHANNEL_ID = channel.id;
+    // 서버별로 JSON에 저장
+    setPatchChannel(interaction.guild.id, channel.id);
 
     const embed = new EmbedBuilder()
       .setTitle('✅ 패치노트 알림 채널 설정 완료')
       .setDescription(
         `${channel} 채널에 롤 패치노트 알림이 전송됩니다.\n\n` +
-          '⚠️ **영구 설정하려면** `.env` 파일에 아래를 추가하세요:\n' +
-          `\`LOL_PATCH_CHANNEL_ID=${channel.id}\``
+          '새로운 패치가 나오면 이 채널에 자동으로 알림이 옵니다!\n' +
+          '해제하려면 `/패치노트 해제`를 사용하세요.'
       )
       .setColor(0x00ff00);
 
     await interaction.reply({ embeds: [embed], ephemeral: true });
   },
 
+  // ============================================
+  // 🔇 패치 알림 해제
+  // ============================================
+  async removeChannel(interaction) {
+    const channelId = getPatchChannel(interaction.guild.id);
+
+    if (!channelId) {
+      return interaction.reply({
+        content: '❌ 이 서버에 패치노트 알림이 설정되어 있지 않습니다.',
+        ephemeral: true,
+      });
+    }
+
+    removePatchChannel(interaction.guild.id);
+
+    await interaction.reply({
+      content: '✅ 패치노트 자동 알림이 해제되었습니다.',
+      ephemeral: true,
+    });
+  },
+
+  // ============================================
+  // 📊 상태 확인
+  // ============================================
   async getStatus(interaction) {
     const lastPatch = loadLastPatch();
-    const channelId = process.env.LOL_PATCH_CHANNEL_ID;
+    const channelId = getPatchChannel(interaction.guild.id);
 
     const embed = new EmbedBuilder()
       .setTitle('📊 패치노트 알림 상태')
