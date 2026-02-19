@@ -13,6 +13,7 @@ const { startEventScheduler } = require('./services/eventService');
 const { startDashboard } = require('../dashboard/server');
 const { handleMemberJoin, handleGameSelect } = require('./services/welcomeService');
 const { addXp, createLevelUpEmbed } = require('./services/levelService');
+const { startLolTracker } = require('./services/lolTrackerService');
 
 // ============================================
 // 클라이언트 설정
@@ -64,6 +65,9 @@ client.once(Events.ClientReady, (c) => {
 
   // 웹 대시보드 시작
   startDashboard(client);
+
+  // 롤 게임 자동 감지 트래커 시작
+  startLolTracker(client);
 });
 
 // ============================================
