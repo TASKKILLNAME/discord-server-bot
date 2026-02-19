@@ -334,11 +334,13 @@ module.exports = {
       await interaction.editReply({ embeds });
     } catch (err) {
       console.error('실시간 조회 오류:', err);
+      const errorDetail = err.userMessage || err.message || '알 수 없는 오류';
+      const statusCode = err.response?.status ? ` (HTTP ${err.response.status})` : '';
       await interaction.editReply({
         embeds: [
           new EmbedBuilder()
             .setTitle('❌ 오류 발생')
-            .setDescription(err.userMessage || '전적 정보를 가져오는 중 오류가 발생했습니다.')
+            .setDescription(`${errorDetail}${statusCode}`)
             .setColor(0xff0000),
         ],
       });
@@ -428,11 +430,13 @@ module.exports = {
       });
     } catch (err) {
       console.error('최근 전적 조회 오류:', err);
+      const errorDetail = err.userMessage || err.message || '알 수 없는 오류';
+      const statusCode = err.response?.status ? ` (HTTP ${err.response.status})` : '';
       await interaction.editReply({
         embeds: [
           new EmbedBuilder()
             .setTitle('❌ 오류 발생')
-            .setDescription(err.userMessage || '전적 정보를 가져오는 중 오류가 발생했습니다.')
+            .setDescription(`${errorDetail}${statusCode}`)
             .setColor(0xff0000),
         ],
       });
