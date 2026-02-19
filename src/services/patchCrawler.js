@@ -214,4 +214,5 @@ module.exports = {
   getLatestPatchUrl,
   crawlPatchContent,
   loadLastPatch,
+  saveLastPatch,
 };

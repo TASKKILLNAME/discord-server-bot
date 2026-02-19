@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const { checkForNewPatch } = require('./patchCrawler');
+const { checkForNewPatch, getLatestPatchUrl, loadLastPatch, saveLastPatch } = require('./patchCrawler');
 const { summarizePatchNotes, formatForDiscord } = require('./aiSummarizer');
 const { EmbedBuilder } = require('discord.js');
 
@@ -102,11 +102,38 @@ function startPatchScheduler(client) {
     await checkAndNotifyAll(client);
   });
 
-  // 봇 시작 시 1분 후 첫 체크
+  // 봇 시작 시 1분 후 현재 패치 동기화 (알림 없이 기록만)
   setTimeout(async () => {
-    console.log('🔍 초기 패치노트 체크...');
-    await checkAndNotifyAll(client);
+    console.log('🔍 초기 패치노트 동기화 (알림 없음)...');
+    await syncCurrentPatch();
   }, 60000);
+}
+
+/**
+ * 현재 최신 패치를 기록만 하고 알림은 보내지 않음 (재시작 시 중복 알림 방지)
+ */
+async function syncCurrentPatch() {
+  try {
+    const lastPatch = loadLastPatch();
+    // 이미 기록된 패치가 있으면 동기화 불필요
+    if (lastPatch.lastUrl) {
+      console.log(`📋 기존 패치 기록 존재: ${lastPatch.lastTitle || lastPatch.lastUrl}`);
+      return;
+    }
+
+    // 기록이 없으면 (첫 실행 또는 파일 초기화) 현재 패치를 기록만
+    const latest = await getLatestPatchUrl();
+    if (latest.url) {
+      saveLastPatch({
+        lastUrl: latest.url,
+        lastTitle: latest.title || '패치노트',
+        checkedAt: new Date().toISOString(),
+      });
+      console.log(`📋 현재 패치 기록 완료: ${latest.title || latest.url} (알림 없음)`);
+    }
+  } catch (err) {
+    console.error('패치 동기화 실패:', err.message);
+  }
 }
 
 /**
