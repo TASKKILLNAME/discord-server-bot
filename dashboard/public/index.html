@@ -605,6 +605,8 @@
     // ============================================
     // Membership (봇 오너 전용)
     // ============================================
+    let membershipGuilds = []; // 봇이 참여한 서버 목록 캐시
+
     async function renderMembership() {
       if (!isOwner) return '<div class="card"><p>봇 오너만 접근 가능합니다.</p></div>';
 
@@ -644,7 +646,7 @@
                       <div style="font-size:15px;font-weight:700;color:${creditColor}">${info.credits}회</div>
                       <div style="font-size:10px;color:#5d5f7a">총 ${info.totalPurchased || 0}회 구매</div>
                     </div>
-                    <button class="btn btn-success" style="padding:6px 12px;font-size:11px" onclick="chargeCredit('${guildId}','${userId}','${info.displayName || info.username}')">충전</button>
+                    <button class="btn btn-success" style="padding:6px 12px;font-size:11px" onclick="chargeCredit('${guildId}','${userId}','${(info.displayName || info.username).replace(/'/g, "\\'")}')">충전</button>
                   </div>
                 </div>`;
             }
@@ -675,13 +677,132 @@
             </div>
           </div>
 
+          <div class="card" style="margin-bottom:20px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div class="card-title" style="margin-bottom:0">👥 유저별 크레딧</div>
+              <button class="btn btn-primary" onclick="openNewChargeModal()">➕ 새 유저 충전</button>
+            </div>
+          </div>
+
           <div class="card">
-            <div class="card-title">👥 유저별 크레딧</div>
             ${usersHtml}
+          </div>
+
+          <!-- 새 유저 충전 모달 -->
+          <div id="chargeModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:999;display:none;align-items:center;justify-content:center">
+            <div style="background:#1e1f2e;border:1px solid #2d2f45;border-radius:16px;padding:28px;width:420px;max-width:90%">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                <h3 style="font-size:16px;font-weight:700;color:#fff">➕ 새 유저 크레딧 충전</h3>
+                <button onclick="closeChargeModal()" style="background:none;border:none;color:#5d5f7a;font-size:18px;cursor:pointer">✕</button>
+              </div>
+
+              <div style="margin-bottom:16px">
+                <label style="font-size:12px;color:#8b8db3;display:block;margin-bottom:6px">서버 선택</label>
+                <select id="modalGuildSelect" class="input" style="width:100%" onchange="loadModalMembers()">
+                  <option value="">서버를 선택하세요</option>
+                </select>
+              </div>
+
+              <div style="margin-bottom:16px">
+                <label style="font-size:12px;color:#8b8db3;display:block;margin-bottom:6px">멤버 선택</label>
+                <select id="modalMemberSelect" class="input" style="width:100%">
+                  <option value="">먼저 서버를 선택하세요</option>
+                </select>
+              </div>
+
+              <div style="margin-bottom:16px">
+                <label style="font-size:12px;color:#8b8db3;display:block;margin-bottom:6px">크레딧 수량</label>
+                <div style="display:flex;gap:8px;margin-bottom:8px">
+                  <button class="btn" style="background:#5d5f7a33;color:#e2e4f0;flex:1" onclick="document.getElementById('modalAmount').value=8">🥉 8</button>
+                  <button class="btn" style="background:#5865F233;color:#5865F2;flex:1" onclick="document.getElementById('modalAmount').value=40">🥈 40</button>
+                  <button class="btn" style="background:#43b58133;color:#43b581;flex:1" onclick="document.getElementById('modalAmount').value=83">🥇 83</button>
+                </div>
+                <input type="number" id="modalAmount" class="input" style="width:100%" placeholder="직접 입력..." min="1">
+              </div>
+
+              <div style="margin-bottom:20px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                  <input type="checkbox" id="modalSendDm" checked style="width:16px;height:16px">
+                  <span style="font-size:13px;color:#8b8db3">충전 완료 후 유저에게 DM 알림 전송</span>
+                </label>
+              </div>
+
+              <button class="btn btn-success" style="width:100%;padding:12px" onclick="submitNewCharge()">✅ 충전하기</button>
+            </div>
           </div>
         `;
       } catch (e) {
         return `<div class="card"><p style="color:#f04747">멤버십 데이터 로드 실패: ${e.message}</p></div>`;
+      }
+    }
+
+    async function openNewChargeModal() {
+      const modal = document.getElementById('chargeModal');
+      modal.style.display = 'flex';
+
+      // 서버 목록 로드
+      try {
+        membershipGuilds = await api('/api/membership/guilds');
+        const select = document.getElementById('modalGuildSelect');
+        select.innerHTML = '<option value="">서버를 선택하세요</option>' +
+          membershipGuilds.map(g => `<option value="${g.id}">${g.name} (${g.memberCount}명)</option>`).join('');
+      } catch (e) {
+        showToast('❌ 서버 목록 로드 실패: ' + e.message);
+      }
+    }
+
+    function closeChargeModal() {
+      document.getElementById('chargeModal').style.display = 'none';
+    }
+
+    async function loadModalMembers() {
+      const guildId = document.getElementById('modalGuildSelect').value;
+      const select = document.getElementById('modalMemberSelect');
+
+      if (!guildId) {
+        select.innerHTML = '<option value="">먼저 서버를 선택하세요</option>';
+        return;
+      }
+
+      select.innerHTML = '<option value="">로딩 중...</option>';
+
+      try {
+        const members = await api(`/api/membership/guilds/${guildId}/members`);
+        select.innerHTML = '<option value="">멤버를 선택하세요</option>' +
+          members.map(m => {
+            const tag = m.credits > 0 ? ` [${m.credits}회]` : '';
+            return `<option value="${m.id}" data-name="${m.displayName}">${m.displayName} (@${m.username})${tag}</option>`;
+          }).join('');
+      } catch (e) {
+        select.innerHTML = '<option value="">멤버 로드 실패</option>';
+        showToast('❌ ' + e.message);
+      }
+    }
+
+    async function submitNewCharge() {
+      const guildId = document.getElementById('modalGuildSelect').value;
+      const memberSelect = document.getElementById('modalMemberSelect');
+      const userId = memberSelect.value;
+      const amount = parseInt(document.getElementById('modalAmount').value);
+      const sendDm = document.getElementById('modalSendDm').checked;
+
+      if (!guildId) return showToast('❌ 서버를 선택해주세요');
+      if (!userId) return showToast('❌ 멤버를 선택해주세요');
+      if (!amount || amount <= 0) return showToast('❌ 크레딧 수량을 입력해주세요');
+
+      const username = memberSelect.options[memberSelect.selectedIndex]?.text || userId;
+
+      try {
+        const result = await api(`/api/membership/${guildId}/${userId}/charge`, {
+          method: 'POST',
+          body: JSON.stringify({ amount, sendDm }),
+        });
+        const dmMsg = result.dmSent ? ' (DM 알림 전송됨)' : '';
+        showToast(`✅ ${username}에게 ${amount}회 충전 완료!${dmMsg}`);
+        closeChargeModal();
+        render();
+      } catch (e) {
+        showToast('❌ ' + e.message);
       }
     }
 
@@ -690,11 +811,12 @@
       if (!amount || isNaN(amount) || Number(amount) <= 0) return;
 
       try {
-        await api(`/api/membership/${guildId}/${userId}/charge`, {
+        const result = await api(`/api/membership/${guildId}/${userId}/charge`, {
           method: 'POST',
-          body: JSON.stringify({ amount: Number(amount) }),
+          body: JSON.stringify({ amount: Number(amount), sendDm: true }),
         });
-        showToast(`✅ ${username}님에게 ${amount}회 크레딧 충전 완료!`);
+        const dmMsg = result.dmSent ? ' (DM 알림 전송됨)' : '';
+        showToast(`✅ ${username}님에게 ${amount}회 크레딧 충전 완료!${dmMsg}`);
         render();
       } catch (e) {
         showToast('❌ ' + e.message);

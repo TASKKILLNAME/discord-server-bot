@@ -126,7 +126,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // 버튼 처리 (서버 구성 확인/취소 + 이벤트 + 멤버십)
   if (interaction.isButton()) {
-    // 💳 멤버십 구매 버튼
+    // 💳 멤버십 버튼 (서버: 구매 / DM: 승인·거절)
     if (interaction.customId.startsWith('membership_')) {
       const membershipCommand = client.commands.get('멤버십');
       if (membershipCommand?.handleButton) {

@@ -683,12 +683,55 @@ app.get('/api/membership/:guildId', requireOwner, requireBot, async (req, res) =
   }
 });
 
-// 크레딧 충전 (봇 오너)
-app.post('/api/membership/:guildId/:userId/charge', requireOwner, (req, res) => {
+// 봇이 참여한 전체 서버 목록 (수동 충전 대상 서버 선택용)
+app.get('/api/membership/guilds', requireOwner, requireBot, (req, res) => {
+  try {
+    const guilds = botClient.guilds.cache.map((g) => ({
+      id: g.id,
+      name: g.name,
+      icon: g.iconURL({ dynamic: true, size: 64 }),
+      memberCount: g.memberCount,
+    }));
+    res.json(guilds);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 특정 서버 전체 멤버 목록 (멤버십 데이터 없는 유저도 포함)
+app.get('/api/membership/guilds/:guildId/members', requireOwner, requireBot, async (req, res) => {
+  try {
+    const guild = botClient.guilds.cache.get(req.params.guildId);
+    if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
+
+    const { getGuildMembershipData } = require('../src/services/membershipService');
+    const membershipData = getGuildMembershipData(req.params.guildId);
+
+    const members = await guild.members.fetch();
+    const memberList = members
+      .filter((m) => !m.user.bot)
+      .map((m) => ({
+        id: m.id,
+        username: m.user.username,
+        displayName: m.displayName,
+        avatar: m.user.displayAvatarURL({ dynamic: true, size: 64 }),
+        credits: membershipData[m.id]?.credits || 0,
+        hasMembership: !!membershipData[m.id],
+      }))
+      .sort((a, b) => b.credits - a.credits);
+
+    res.json(memberList);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 크레딧 충전 (봇 오너) + 유저 DM 알림
+app.post('/api/membership/:guildId/:userId/charge', requireOwner, requireBot, async (req, res) => {
   try {
     const { chargeCredits, TIERS } = require('../src/services/membershipService');
     const { guildId, userId } = req.params;
-    const { amount, tier } = req.body;
+    const { amount, tier, sendDm } = req.body;
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: '충전할 크레딧 수를 입력해주세요.' });
@@ -706,7 +749,38 @@ app.post('/api/membership/:guildId/:userId/charge', requireOwner, (req, res) => 
     }
 
     const result = chargeCredits(guildId, userId, amount, tierName, process.env.BOT_OWNER_ID);
-    res.json({ success: true, ...result });
+
+    // 유저에게 DM 알림 전송
+    let dmSent = false;
+    if (sendDm !== false) {
+      try {
+        const { EmbedBuilder } = require('discord.js');
+        const targetUser = await botClient.users.fetch(userId);
+        const guild = botClient.guilds.cache.get(guildId);
+        const serverName = guild?.name || '서버';
+
+        await targetUser.send({
+          embeds: [
+            new EmbedBuilder()
+              .setTitle('✅ 크레딧 충전 완료!')
+              .setDescription(
+                `**${serverName}**에서 크레딧이 충전되었습니다!\n\n` +
+                  `🏷️ 티어: ${tierName}\n` +
+                  `➕ 충전: ${amount}회\n` +
+                  `💳 잔여 크레딧: **${result.credits}회**\n\n` +
+                  '`/멤버십 정보`로 확인할 수 있습니다.'
+              )
+              .setColor(0x57f287)
+              .setTimestamp(),
+          ],
+        });
+        dmSent = true;
+      } catch (dmErr) {
+        console.error('충전 DM 전송 실패:', dmErr.message);
+      }
+    }
+
+    res.json({ success: true, dmSent, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
