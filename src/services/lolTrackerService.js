@@ -12,7 +12,7 @@ const {
   fetchLiveGameData,
 } = require('./riotService');
 const { analyzeLiveGame, parseAnalysisToFields } = require('./lolAnalyzer');
-const { useCredit, getCredits } = require('./membershipService');
+const { hasCredit, useCredit, getCredits } = require('./membershipService');
 
 // 티어 순서 (낮은 → 높은)
 const TIER_ORDER = [
@@ -293,8 +293,8 @@ async function sendGameNotification(client, channel, player, discordUserId) {
   try {
     const guildId = channel.guild.id;
 
-    // 크레딧 체크
-    if (!useCredit(guildId, discordUserId, '자동 게임 감지')) {
+    // 크레딧 보유 체크 (차감은 AI 분석 성공 후)
+    if (!hasCredit(guildId, discordUserId)) {
       const remaining = getCredits(guildId, discordUserId);
       const noCreditsEmbed = new EmbedBuilder()
         .setTitle('🎮 게임 감지!')
@@ -338,6 +338,9 @@ async function sendGameNotification(client, channel, player, discordUserId) {
 
     const analysis = await analyzeLiveGame(gameData);
     const analysisFields = parseAnalysisToFields(analysis);
+
+    // ✅ AI 분석 성공 → 크레딧 차감
+    useCredit(guildId, discordUserId, '자동 게임 감지');
 
     // 블루팀 정보
     const blueDesc = gameData.blueTeam

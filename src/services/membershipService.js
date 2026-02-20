@@ -86,6 +86,14 @@ function getMembershipInfo(guildId, userId) {
 }
 
 // ============================================
+// ✅ 크레딧 보유 확인 (차감 없이 체크만)
+// ============================================
+function hasCredit(guildId, userId) {
+  const data = loadMembershipData();
+  return (data[guildId]?.[userId]?.credits || 0) > 0;
+}
+
+// ============================================
 // 🔻 크레딧 사용 (1회 차감)
 // ============================================
 function useCredit(guildId, userId, action) {
@@ -158,6 +166,7 @@ module.exports = {
   saveMembershipData,
   getCredits,
   getMembershipInfo,
+  hasCredit,
   useCredit,
   chargeCredits,
   setMembershipChannel,

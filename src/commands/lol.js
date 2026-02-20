@@ -24,7 +24,7 @@ const {
   addTrackerRole,
   removeTrackerRole,
 } = require('../services/lolTrackerService');
-const { useCredit, getCredits } = require('../services/membershipService');
+const { hasCredit, useCredit, getCredits } = require('../services/membershipService');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -268,8 +268,8 @@ module.exports = {
     const gameName = interaction.options.getString('소환사명');
     const tagLine = interaction.options.getString('태그');
 
-    // 크레딧 체크
-    if (!useCredit(interaction.guild.id, interaction.user.id, '실시간 분석')) {
+    // 크레딧 보유 체크 (차감은 AI 분석 성공 후)
+    if (!hasCredit(interaction.guild.id, interaction.user.id)) {
       const remaining = getCredits(interaction.guild.id, interaction.user.id);
       return interaction.reply({
         embeds: [
@@ -325,6 +325,9 @@ module.exports = {
         const analysis = await analyzeRecentMatches(matchData);
         const fields = parseAnalysisToFields(analysis);
 
+        // ✅ AI 분석 성공 → 크레딧 차감
+        useCredit(interaction.guild.id, interaction.user.id, '실시간 분석 (최근게임 대체)');
+
         const m = matchData.matches[0];
         const resultEmbed = new EmbedBuilder()
           .setTitle(`📊 ${gameName}#${tagLine} — 최근 게임`)
@@ -354,6 +357,9 @@ module.exports = {
       // 실시간 게임 분석
       const analysis = await analyzeLiveGame(gameData);
       const analysisFields = parseAnalysisToFields(analysis);
+
+      // ✅ AI 분석 성공 → 크레딧 차감
+      useCredit(interaction.guild.id, interaction.user.id, '실시간 분석');
 
       const blueDesc = gameData.blueTeam
         .map((p) => `**${p.championName}** | ${p.rank}\n${p.spell1} / ${p.spell2}`)
@@ -413,8 +419,8 @@ module.exports = {
     const tagLine = interaction.options.getString('태그');
     const count = interaction.options.getInteger('횟수') || 5;
 
-    // 크레딧 체크
-    if (!useCredit(interaction.guild.id, interaction.user.id, '최근전적 분석')) {
+    // 크레딧 보유 체크 (차감은 AI 분석 성공 후)
+    if (!hasCredit(interaction.guild.id, interaction.user.id)) {
       const remaining = getCredits(interaction.guild.id, interaction.user.id);
       return interaction.reply({
         embeds: [
@@ -458,6 +464,9 @@ module.exports = {
       // AI 분석
       const analysis = await analyzeRecentMatches(matchData);
       const analysisFields = parseAnalysisToFields(analysis);
+
+      // ✅ AI 분석 성공 → 크레딧 차감
+      useCredit(interaction.guild.id, interaction.user.id, '최근전적 분석');
 
       // 프로필 임베드
       const wins = matchData.matches.filter((m) => m.win).length;
