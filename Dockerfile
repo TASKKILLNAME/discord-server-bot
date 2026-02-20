@@ -17,4 +17,7 @@ RUN npm ci --only=production
 
 COPY . .
 
+# Railway Volume 마운트 포인트 (영구 데이터 저장)
+VOLUME ["/app/data"]
+
 CMD ["node", "src/index.js"]
