@@ -124,8 +124,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 
-  // 버튼 처리 (서버 구성 확인/취소 + 이벤트)
+  // 버튼 처리 (서버 구성 확인/취소 + 이벤트 + 멤버십)
   if (interaction.isButton()) {
+    // 💳 멤버십 구매 버튼
+    if (interaction.customId.startsWith('membership_')) {
+      const membershipCommand = client.commands.get('멤버십');
+      if (membershipCommand?.handleButton) {
+        try {
+          await membershipCommand.handleButton(interaction);
+        } catch (error) {
+          console.error('멤버십 버튼 오류:', error);
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ 오류가 발생했습니다.', ephemeral: true });
+          }
+        }
+      }
+      return;
+    }
+
     // 이벤트 참가/목록 버튼
     if (interaction.customId.startsWith('event_')) {
       const eventCommand = client.commands.get('이벤트');

@@ -24,6 +24,7 @@ const {
   addTrackerRole,
   removeTrackerRole,
 } = require('../services/lolTrackerService');
+const { useCredit, getCredits } = require('../services/membershipService');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -267,13 +268,31 @@ module.exports = {
     const gameName = interaction.options.getString('소환사명');
     const tagLine = interaction.options.getString('태그');
 
+    // 크레딧 체크
+    if (!useCredit(interaction.guild.id, interaction.user.id, '실시간 분석')) {
+      const remaining = getCredits(interaction.guild.id, interaction.user.id);
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('❌ 크레딧 부족')
+            .setDescription(
+              `AI 분석 크레딧이 부족합니다. (잔여: ${remaining}회)\n\n` +
+                '`/멤버십 구매`로 크레딧을 충전해주세요.'
+            )
+            .setColor(0xff0000),
+        ],
+        ephemeral: true,
+      });
+    }
+
     await interaction.deferReply();
 
     try {
+      const credits = getCredits(interaction.guild.id, interaction.user.id);
       const loadingEmbed = new EmbedBuilder()
         .setTitle('🔍 실시간 게임 정보를 가져오는 중...')
         .setDescription(
-          `**${gameName}#${tagLine}** 소환사를 검색하고 AI가 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)`
+          `**${gameName}#${tagLine}** 소환사를 검색하고 AI가 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)\n\n💳 잔여 크레딧: ${credits}회`
         )
         .setColor(0xffa500);
       await interaction.editReply({ embeds: [loadingEmbed] });
@@ -394,13 +413,31 @@ module.exports = {
     const tagLine = interaction.options.getString('태그');
     const count = interaction.options.getInteger('횟수') || 5;
 
+    // 크레딧 체크
+    if (!useCredit(interaction.guild.id, interaction.user.id, '최근전적 분석')) {
+      const remaining = getCredits(interaction.guild.id, interaction.user.id);
+      return interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('❌ 크레딧 부족')
+            .setDescription(
+              `AI 분석 크레딧이 부족합니다. (잔여: ${remaining}회)\n\n` +
+                '`/멤버십 구매`로 크레딧을 충전해주세요.'
+            )
+            .setColor(0xff0000),
+        ],
+        ephemeral: true,
+      });
+    }
+
     await interaction.deferReply();
 
     try {
+      const credits = getCredits(interaction.guild.id, interaction.user.id);
       const loadingEmbed = new EmbedBuilder()
         .setTitle('🔍 최근 전적을 가져오는 중...')
         .setDescription(
-          `**${gameName}#${tagLine}** 최근 ${count}게임을 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)`
+          `**${gameName}#${tagLine}** 최근 ${count}게임을 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)\n\n💳 잔여 크레딧: ${credits}회`
         )
         .setColor(0xffa500);
       await interaction.editReply({ embeds: [loadingEmbed] });
