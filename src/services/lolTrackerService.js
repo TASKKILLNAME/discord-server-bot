@@ -1,7 +1,9 @@
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, PermissionsBitField } = require('discord.js');
+
+const TRACKER_ROLE_NAME = '🎮 LOL 트래커';
 const {
   getAccountByRiotId,
   getLiveGame,
@@ -114,6 +116,91 @@ function setTrackerChannel(guildId, channelId) {
   }
   data[guildId].channelId = channelId;
   saveTrackerData(data);
+}
+
+// ============================================
+// 🔒 전용 역할 + 채널 권한 관리
+// ============================================
+
+/**
+ * LOL 트래커 전용 역할을 가져오거나 생성
+ */
+async function ensureTrackerRole(guild) {
+  let role = guild.roles.cache.find((r) => r.name === TRACKER_ROLE_NAME);
+  if (!role) {
+    try {
+      role = await guild.roles.create({
+        name: TRACKER_ROLE_NAME,
+        color: 0x1a78ae,
+        reason: 'LOL 트래커 전용 역할 자동 생성',
+      });
+      console.log(`🔒 ${guild.name}: "${TRACKER_ROLE_NAME}" 역할 생성 완료`);
+    } catch (err) {
+      console.error(`역할 생성 실패 (${guild.name}):`, err.message);
+      return null;
+    }
+  }
+  return role;
+}
+
+/**
+ * 채널에 트래커 역할만 볼 수 있도록 권한 설정
+ */
+async function setChannelPermissions(channel, role) {
+  try {
+    // @everyone 읽기 차단, 트래커 역할만 허용
+    await channel.permissionOverwrites.set([
+      {
+        id: channel.guild.roles.everyone.id,
+        deny: [PermissionsBitField.Flags.ViewChannel],
+      },
+      {
+        id: role.id,
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory],
+      },
+      {
+        id: channel.guild.members.me.id,
+        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.EmbedLinks],
+      },
+    ]);
+    console.log(`🔒 ${channel.guild.name}: #${channel.name} 채널 권한 설정 완료`);
+  } catch (err) {
+    console.error(`채널 권한 설정 실패:`, err.message);
+  }
+}
+
+/**
+ * 멤버에게 트래커 역할 부여
+ */
+async function addTrackerRole(guild, discordUserId) {
+  try {
+    const role = await ensureTrackerRole(guild);
+    if (!role) return;
+    const member = await guild.members.fetch(discordUserId);
+    if (member && !member.roles.cache.has(role.id)) {
+      await member.roles.add(role);
+      console.log(`✅ ${guild.name}: ${member.user.tag}에게 트래커 역할 부여`);
+    }
+  } catch (err) {
+    console.error(`트래커 역할 부여 실패:`, err.message);
+  }
+}
+
+/**
+ * 멤버에서 트래커 역할 제거
+ */
+async function removeTrackerRole(guild, discordUserId) {
+  try {
+    const role = guild.roles.cache.find((r) => r.name === TRACKER_ROLE_NAME);
+    if (!role) return;
+    const member = await guild.members.fetch(discordUserId);
+    if (member && member.roles.cache.has(role.id)) {
+      await member.roles.remove(role);
+      console.log(`🗑️ ${guild.name}: ${member.user.tag}에서 트래커 역할 제거`);
+    }
+  } catch (err) {
+    console.error(`트래커 역할 제거 실패:`, err.message);
+  }
 }
 
 function getRegisteredPlayers(guildId) {
@@ -449,4 +536,8 @@ module.exports = {
   getTrackerChannel,
   startLolTracker,
   stopLolTracker,
+  ensureTrackerRole,
+  setChannelPermissions,
+  addTrackerRole,
+  removeTrackerRole,
 };

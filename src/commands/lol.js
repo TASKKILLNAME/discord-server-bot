@@ -19,6 +19,10 @@ const {
   setTrackerChannel,
   getRegisteredPlayers,
   getTrackerChannel,
+  ensureTrackerRole,
+  setChannelPermissions,
+  addTrackerRole,
+  removeTrackerRole,
 } = require('../services/lolTrackerService');
 
 module.exports = {
@@ -130,11 +134,15 @@ module.exports = {
         tagLine
       );
 
+      // 트래커 역할 자동 부여
+      await addTrackerRole(interaction.guild, targetUser.id);
+
       const targetDisplay = isSelf ? '' : ` (<@${targetUser.id}>님의)`;
       const embed = new EmbedBuilder()
         .setTitle('✅ 롤 계정 등록 완료!')
         .setDescription(
           `${targetDisplay}**${account.gameName}#${account.tagLine}** 계정이 등록되었습니다.\n\n` +
+            '🔒 전용 채널 접근 역할이 부여되었습니다.\n' +
             '게임을 시작하면 자동으로 AI 분석이 알림 채널에 전송됩니다!\n' +
             '`/전적 채널설정`으로 알림 채널을 설정해주세요.'
         )
@@ -158,9 +166,12 @@ module.exports = {
     const removed = unregisterPlayer(interaction.guild.id, targetUser.id);
 
     if (removed) {
+      // 트래커 역할 제거
+      await removeTrackerRole(interaction.guild, targetUser.id);
+
       const msg = isSelf
-        ? '✅ 롤 계정 등록이 해제되었습니다.'
-        : `✅ <@${targetUser.id}>님의 롤 계정 등록이 해제되었습니다.`;
+        ? '✅ 롤 계정 등록이 해제되었습니다. (채널 접근 역할 제거됨)'
+        : `✅ <@${targetUser.id}>님의 롤 계정 등록이 해제되었습니다. (채널 접근 역할 제거됨)`;
       await interaction.reply({ content: msg, ephemeral: true });
     } else {
       const msg = isSelf
@@ -217,20 +228,35 @@ module.exports = {
       });
     }
 
+    await interaction.deferReply({ ephemeral: true });
+
     const channel = interaction.options.getChannel('채널');
     setTrackerChannel(interaction.guild.id, channel.id);
 
-    await interaction.reply({
+    // 전용 역할 생성 + 채널 권한 설정
+    const role = await ensureTrackerRole(interaction.guild);
+    if (role) {
+      await setChannelPermissions(channel, role);
+
+      // 이미 등록된 멤버들에게 역할 부여
+      const players = getRegisteredPlayers(interaction.guild.id);
+      for (const discordUserId of Object.keys(players)) {
+        await addTrackerRole(interaction.guild, discordUserId);
+      }
+    }
+
+    await interaction.editReply({
       embeds: [
         new EmbedBuilder()
           .setTitle('✅ 롤 알림 채널 설정 완료')
           .setDescription(
             `${channel}에 게임 자동 감지 알림이 전송됩니다.\n\n` +
-              '등록된 소환사가 게임을 시작하면 자동으로 AI 분석이 올라옵니다!'
+              `🔒 **\`${role?.name || '🎮 LOL 트래커'}\`** 역할이 생성되었습니다.\n` +
+              '등록된 멤버만 이 채널을 볼 수 있습니다.\n' +
+              '`/전적 등록` 시 역할이 자동 부여됩니다.'
           )
           .setColor(0x57f287),
       ],
-      ephemeral: true,
     });
   },
 
