@@ -581,6 +581,138 @@ app.get('/api/guilds/:guildId/stats', requireAuth, requireBot, async (req, res) 
 });
 
 // ============================================
+// Membership Routes (봇 오너 전용)
+// ============================================
+
+function requireOwner(req, res, next) {
+  if (!req.session.user) {
+    return res.status(401).json({ error: '로그인이 필요합니다.' });
+  }
+  if (req.session.user.id !== process.env.BOT_OWNER_ID) {
+    return res.status(403).json({ error: '봇 오너만 접근 가능합니다.' });
+  }
+  next();
+}
+
+// 봇 오너 여부 확인 API
+app.get('/api/auth/is-owner', requireAuth, (req, res) => {
+  res.json({ isOwner: req.session.user.id === process.env.BOT_OWNER_ID });
+});
+
+// 전체 멤버십 통계
+app.get('/api/membership/stats', requireOwner, (req, res) => {
+  try {
+    const { getMembershipStats } = require('../src/services/membershipService');
+    const stats = getMembershipStats();
+
+    // 서버 이름 매핑
+    if (botClient) {
+      for (const guildId of Object.keys(stats.serverStats)) {
+        const guild = botClient.guilds.cache.get(guildId);
+        stats.serverStats[guildId].name = guild?.name || `알 수 없는 서버 (${guildId})`;
+      }
+    }
+
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 전체 서버 멤버십 데이터
+app.get('/api/membership', requireOwner, (req, res) => {
+  try {
+    const { getAllMembershipData } = require('../src/services/membershipService');
+    const data = getAllMembershipData();
+
+    // 서버 이름 + 유저 이름 매핑
+    const result = {};
+    for (const [guildId, users] of Object.entries(data)) {
+      const guild = botClient?.guilds.cache.get(guildId);
+      result[guildId] = {
+        guildName: guild?.name || `알 수 없는 서버`,
+        users: {},
+      };
+      for (const [userId, info] of Object.entries(users)) {
+        const member = guild?.members.cache.get(userId);
+        result[guildId].users[userId] = {
+          ...info,
+          username: member?.user.username || member?.user.tag || `유저 ${userId}`,
+          displayName: member?.displayName || `유저 ${userId}`,
+        };
+      }
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 특정 서버 멤버십 데이터
+app.get('/api/membership/:guildId', requireOwner, requireBot, async (req, res) => {
+  try {
+    const { getGuildMembershipData } = require('../src/services/membershipService');
+    const guildId = req.params.guildId;
+    const guild = botClient.guilds.cache.get(guildId);
+    const users = getGuildMembershipData(guildId);
+
+    // 멤버 정보 fetch
+    if (guild) {
+      try { await guild.members.fetch(); } catch (e) { /* 무시 */ }
+    }
+
+    const result = {};
+    for (const [userId, info] of Object.entries(users)) {
+      const member = guild?.members.cache.get(userId);
+      result[userId] = {
+        ...info,
+        username: member?.user.username || `유저 ${userId}`,
+        displayName: member?.displayName || `유저 ${userId}`,
+        avatar: member?.user.displayAvatarURL({ dynamic: true, size: 64 }) || null,
+      };
+    }
+
+    res.json({
+      guildId,
+      guildName: guild?.name || '알 수 없는 서버',
+      users: result,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 크레딧 충전 (봇 오너)
+app.post('/api/membership/:guildId/:userId/charge', requireOwner, (req, res) => {
+  try {
+    const { chargeCredits, TIERS } = require('../src/services/membershipService');
+    const { guildId, userId } = req.params;
+    const { amount, tier } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: '충전할 크레딧 수를 입력해주세요.' });
+    }
+
+    // 티어 이름 판별
+    let tierName = tier || '커스텀';
+    if (!tier) {
+      for (const [, t] of Object.entries(TIERS)) {
+        if (t.credits === amount) {
+          tierName = t.name;
+          break;
+        }
+      }
+    }
+
+    const result = chargeCredits(guildId, userId, amount, tierName, process.env.BOT_OWNER_ID);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
 // SPA Fallback
 // ============================================
 app.get('*', (req, res) => {

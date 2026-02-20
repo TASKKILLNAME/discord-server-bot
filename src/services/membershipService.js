@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '../../data/membership.json');
-const SETTINGS_FILE = path.join(__dirname, '../../data/membershipSettings.json');
 
 // ============================================
 // 💰 멤버십 티어 정의
@@ -35,41 +34,6 @@ function saveMembershipData(data) {
   } catch (err) {
     console.error('멤버십 데이터 저장 오류:', err);
   }
-}
-
-function loadSettings() {
-  try {
-    if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
-    }
-  } catch (err) {
-    console.error('멤버십 설정 로드 오류:', err);
-  }
-  return {};
-}
-
-function saveSettings(data) {
-  try {
-    const dir = path.dirname(SETTINGS_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error('멤버십 설정 저장 오류:', err);
-  }
-}
-
-// ============================================
-// 📢 관리 채널 설정
-// ============================================
-function setMembershipChannel(guildId, channelId) {
-  const settings = loadSettings();
-  settings[guildId] = { channelId, setAt: new Date().toISOString() };
-  saveSettings(settings);
-}
-
-function getMembershipChannel(guildId) {
-  const settings = loadSettings();
-  return settings[guildId]?.channelId || null;
 }
 
 // ============================================
@@ -160,6 +124,71 @@ function chargeCredits(guildId, userId, amount, tier, adminId) {
   return data[guildId][userId];
 }
 
+// ============================================
+// 🌐 웹 대시보드용 함수
+// ============================================
+
+/**
+ * 모든 서버의 멤버십 데이터 반환 (봇 오너 전용)
+ */
+function getAllMembershipData() {
+  return loadMembershipData();
+}
+
+/**
+ * 특정 서버의 멤버십 데이터 반환
+ */
+function getGuildMembershipData(guildId) {
+  const data = loadMembershipData();
+  return data[guildId] || {};
+}
+
+/**
+ * 전체 통계 반환
+ */
+function getMembershipStats() {
+  const data = loadMembershipData();
+  let totalUsers = 0;
+  let totalCreditsRemaining = 0;
+  let totalPurchased = 0;
+  let totalUsed = 0;
+  const serverStats = {};
+
+  for (const [guildId, users] of Object.entries(data)) {
+    const guildUsers = Object.entries(users);
+    let guildCredits = 0;
+    let guildPurchased = 0;
+    let guildUsed = 0;
+
+    for (const [userId, info] of guildUsers) {
+      totalUsers++;
+      totalCreditsRemaining += info.credits || 0;
+      totalPurchased += info.totalPurchased || 0;
+      guildCredits += info.credits || 0;
+      guildPurchased += info.totalPurchased || 0;
+
+      const useCount = (info.history || []).filter((h) => h.type === 'use').length;
+      totalUsed += useCount;
+      guildUsed += useCount;
+    }
+
+    serverStats[guildId] = {
+      users: guildUsers.length,
+      creditsRemaining: guildCredits,
+      totalPurchased: guildPurchased,
+      totalUsed: guildUsed,
+    };
+  }
+
+  return {
+    totalUsers,
+    totalCreditsRemaining,
+    totalPurchased,
+    totalUsed,
+    serverStats,
+  };
+}
+
 module.exports = {
   TIERS,
   loadMembershipData,
@@ -169,6 +198,7 @@ module.exports = {
   hasCredit,
   useCredit,
   chargeCredits,
-  setMembershipChannel,
-  getMembershipChannel,
+  getAllMembershipData,
+  getGuildMembershipData,
+  getMembershipStats,
 };

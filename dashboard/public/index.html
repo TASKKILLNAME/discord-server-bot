@@ -213,6 +213,7 @@
     let currentUser = null;
     let currentGuild = null;
     let activeTab = 'dashboard';
+    let isOwner = false;
 
     // ============================================
     // API Helper
@@ -284,6 +285,7 @@
         { id: 'patchnotes', icon: '📰', label: '패치노트' },
         { id: 'tts', icon: '🔊', label: 'TTS' },
         { id: 'settings', icon: '⚙️', label: '설정' },
+        ...(isOwner ? [{ id: 'membership', icon: '💳', label: '멤버십 관리' }] : []),
       ];
 
       const guildName = currentGuild?.name || '서버 선택';
@@ -601,6 +603,105 @@
     }
 
     // ============================================
+    // Membership (봇 오너 전용)
+    // ============================================
+    async function renderMembership() {
+      if (!isOwner) return '<div class="card"><p>봇 오너만 접근 가능합니다.</p></div>';
+
+      try {
+        const stats = await api('/api/membership/stats');
+        const data = await api('/api/membership');
+
+        // 서버 선택 옵션
+        const guilds = Object.entries(data);
+
+        let usersHtml = '';
+        if (guilds.length === 0) {
+          usersHtml = '<p style="color:#5d5f7a;padding:16px">멤버십 데이터가 없습니다.</p>';
+        } else {
+          for (const [guildId, guildInfo] of guilds) {
+            const users = Object.entries(guildInfo.users);
+            if (users.length === 0) continue;
+
+            usersHtml += `<div style="margin-bottom:20px">
+              <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:12px;padding:8px 12px;background:#1a1b2e;border-radius:8px">
+                🏠 ${guildInfo.guildName} <span style="color:#5d5f7a;font-weight:400">(${users.length}명)</span>
+              </div>`;
+
+            for (const [userId, info] of users) {
+              const creditColor = info.credits > 0 ? '#43b581' : '#f04747';
+              usersHtml += `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #1a1b2e" data-guild="${guildId}" data-user="${userId}">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    ${info.avatar ? `<img src="${info.avatar}" style="width:32px;height:32px;border-radius:50%">` : `<div style="width:32px;height:32px;border-radius:50%;background:#2d2f45;display:flex;align-items:center;justify-content:center;font-size:12px">👤</div>`}
+                    <div>
+                      <div style="font-size:13px;font-weight:600">${info.displayName || info.username}</div>
+                      <div style="font-size:11px;color:#5d5f7a">${info.tier || '미구매'}</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <div style="text-align:right">
+                      <div style="font-size:15px;font-weight:700;color:${creditColor}">${info.credits}회</div>
+                      <div style="font-size:10px;color:#5d5f7a">총 ${info.totalPurchased || 0}회 구매</div>
+                    </div>
+                    <button class="btn btn-success" style="padding:6px 12px;font-size:11px" onclick="chargeCredit('${guildId}','${userId}','${info.displayName || info.username}')">충전</button>
+                  </div>
+                </div>`;
+            }
+            usersHtml += '</div>';
+          }
+        }
+
+        return `
+          <h2 class="page-title">💳 멤버십 관리</h2>
+          <p class="page-desc">모든 서버의 AI 분석 크레딧을 관리합니다 (봇 오너 전용)</p>
+
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+            <div class="card" style="text-align:center;padding:20px">
+              <div style="font-size:24px;font-weight:800;color:#fff">${stats.totalUsers}</div>
+              <div style="font-size:11px;color:#5d5f7a;margin-top:4px">전체 유저</div>
+            </div>
+            <div class="card" style="text-align:center;padding:20px">
+              <div style="font-size:24px;font-weight:800;color:#43b581">${stats.totalCreditsRemaining}</div>
+              <div style="font-size:11px;color:#5d5f7a;margin-top:4px">잔여 크레딧</div>
+            </div>
+            <div class="card" style="text-align:center;padding:20px">
+              <div style="font-size:24px;font-weight:800;color:#5865F2">${stats.totalPurchased}</div>
+              <div style="font-size:11px;color:#5d5f7a;margin-top:4px">총 구매량</div>
+            </div>
+            <div class="card" style="text-align:center;padding:20px">
+              <div style="font-size:24px;font-weight:800;color:#f0b232">${stats.totalUsed}</div>
+              <div style="font-size:11px;color:#5d5f7a;margin-top:4px">총 사용량</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">👥 유저별 크레딧</div>
+            ${usersHtml}
+          </div>
+        `;
+      } catch (e) {
+        return `<div class="card"><p style="color:#f04747">멤버십 데이터 로드 실패: ${e.message}</p></div>`;
+      }
+    }
+
+    async function chargeCredit(guildId, userId, username) {
+      const amount = prompt(`${username}님에게 충전할 크레딧 수:\n\n🥉 브론즈: 8회 (1,000원)\n🥈 실버: 40회 (5,000원)\n🥇 골드: 83회 (10,000원)`);
+      if (!amount || isNaN(amount) || Number(amount) <= 0) return;
+
+      try {
+        await api(`/api/membership/${guildId}/${userId}/charge`, {
+          method: 'POST',
+          body: JSON.stringify({ amount: Number(amount) }),
+        });
+        showToast(`✅ ${username}님에게 ${amount}회 크레딧 충전 완료!`);
+        render();
+      } catch (e) {
+        showToast('❌ ' + e.message);
+      }
+    }
+
+    // ============================================
     // Action Handlers
     // ============================================
 
@@ -759,6 +860,7 @@
           case 'templates': pageEl.innerHTML = renderTemplates(); break;
           case 'patchnotes': pageEl.innerHTML = await renderPatchNotes(); break;
           case 'settings': pageEl.innerHTML = renderSettings(); break;
+          case 'membership': pageEl.innerHTML = await renderMembership(); break;
           default: pageEl.innerHTML = await renderDashboard();
         }
       } catch (e) {
@@ -781,6 +883,13 @@
           } else {
             console.log('⚠️ 관리 가능한 서버 없음');
           }
+
+          // 봇 오너 여부 확인
+          try {
+            const ownerRes = await api('/api/auth/is-owner');
+            isOwner = ownerRes.isOwner;
+            if (isOwner) console.log('👑 봇 오너 확인');
+          } catch (e) { /* 무시 */ }
         }
       } catch (e) {
         console.log('Not logged in:', e.message);
