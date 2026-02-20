@@ -214,9 +214,7 @@ function getSpellName(spellId) {
 function formatRank(rankEntries) {
   if (!rankEntries || rankEntries.length === 0) return '언랭크';
 
-  const solo = rankEntries.find((r) => r.queueType === 'RANKED_SOLO_5x5');
-  const flex = rankEntries.find((r) => r.queueType === 'RANKED_FLEX_SR');
-  const primary = solo || flex;
+  const primary = rankEntries.find((r) => r.queueType === 'RANKED_SOLO_5x5');
 
   if (!primary) return '언랭크';
 

@@ -38,34 +38,33 @@ async function analyzeLiveGame(gameData) {
       messages: [
         {
           role: 'user',
-          content: `당신은 리그 오브 레전드 전문 분석가입니다. 아래 실시간 게임 데이터를 분석해주세요.
+          content: `리그 오브 레전드 실시간 게임 데이터. 서론 없이 바로 분석.
 
-**🔵 블루팀:**
+🔵 블루팀:
 ${blueTeamStr}
 
-**🔴 레드팀:**
+🔴 레드팀:
 ${redTeamStr}
 
-다음 형식으로 분석해주세요:
+분석 지침:
+- 솔로랭크 티어 기준으로 실력 차이 평가
+- 팀 구성의 승리 조건과 패배 조건을 명확히
+- 라인전 매치업에서 누가 유리한지 구체적으로
+- 서론/인사 없이 바로 핵심만
+
+다음 형식으로:
 
 ## 🔍 팀 구성 분석
-(각 팀의 구성 특징: 딜러/탱커/서포터 비율, 팀파이트 vs 스플릿 등)
+(딜 구성, 탱/딜 비율, 팀파이트 vs 스플릿 한줄씩)
 
 ## 📊 승리 예측
-(승률 예측과 근거 - 예: "블루팀 55% : 레드팀 45%")
+(블루 vs 레드 %와 핵심 근거 2줄)
 
 ## ⚔️ 핵심 매치업
-(가장 중요한 매치업 2-3개와 주의할 점)
+(라인별 유불리 + 주의할 매치업, 각 1줄)
 
-## 💡 전략 조언
-(이기기 위한 핵심 전략 2-3개)
-
-**규칙:**
-- 각 섹션은 2-4줄로 간결하게
-- 챔피언 이름은 한국어로
-- 랭크 정보를 바탕으로 실력 차이도 분석
-- 이모지를 적절히 활용
-- 친근하고 실용적인 톤으로`,
+## 💡 이기려면
+(각 팀이 이기는 시나리오, 각 2줄 이내)`,
         },
       ],
     });
@@ -93,6 +92,18 @@ async function analyzeRecentMatches(matchData) {
     )
     .join('\n');
 
+  // 승/패 분리 통계 계산
+  const wins = matchData.matches.filter((m) => m.win);
+  const losses = matchData.matches.filter((m) => !m.win);
+  const total = matchData.matches.length;
+  const winRate = total > 0 ? Math.round((wins.length / total) * 100) : 0;
+
+  const avgKills = (matchData.matches.reduce((s, m) => s + m.kills, 0) / total).toFixed(1);
+  const avgDeaths = (matchData.matches.reduce((s, m) => s + m.deaths, 0) / total).toFixed(1);
+  const avgAssists = (matchData.matches.reduce((s, m) => s + m.assists, 0) / total).toFixed(1);
+  const avgCs = (matchData.matches.reduce((s, m) => s + parseFloat(m.csPerMin), 0) / total).toFixed(1);
+  const avgDmg = Math.round(matchData.matches.reduce((s, m) => s + m.damage, 0) / total);
+
   try {
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -100,39 +111,41 @@ async function analyzeRecentMatches(matchData) {
       messages: [
         {
           role: 'user',
-          content: `당신은 리그 오브 레전드 전문 분석가입니다. 아래 최근 전적 데이터를 분석해주세요.
-
-**소환사 정보:**
+          content: `분석할 유저 데이터:
 닉네임: ${matchData.account.gameName}#${matchData.account.tagLine}
-랭크: ${matchData.rank}
-레벨: ${matchData.summonerLevel}
+솔로랭크: ${matchData.rank}
+최근 ${total}게임: ${wins.length}승 ${losses.length}패 (${winRate}%)
+평균: ${avgKills}/${avgDeaths}/${avgAssists} KDA | CS ${avgCs}/분 | 피해량 ${avgDmg.toLocaleString()}
 
-**최근 ${matchData.matches.length}게임 전적:**
+매치 데이터:
 ${matchesStr}
 
-다음 형식으로 분석해주세요:
+분석 지침:
+- CS/분, KDA, 피해량, 게임시간을 같은 티어 평균과 비교해서 평가할 것
+- 이기는 게임과 지는 게임의 패턴 차이를 반드시 짚을 것
+- 챔피언별로 플레이 스타일 차이가 보이면 언급할 것
+- 서론/인사 없이 바로 핵심만, 수치 근거 필수
+- 마지막엔 "다음 게임에서 딱 한 가지만 고친다면" 으로 마무리할 것
+
+다음 형식으로:
 
 ## 📈 종합 성적
-(승률, 평균 KDA, 가장 많이 플레이한 챔피언 등 핵심 통계)
+(핵심 수치 요약, 2-3줄)
 
 ## 🎯 챔피언 풀 분석
-(주로 사용하는 챔피언과 역할, 숙련도 평가)
+(챔피언별 특징, 플레이 스타일 차이, 2-3줄)
 
 ## 💪 강점
-(데이터에서 보이는 강점 2-3개)
+(데이터 근거 + 같은 티어 대비 잘하는 점, 2개)
 
 ## 📝 개선점
-(데이터에서 보이는 약점과 구체적 개선 방법 2-3개)
+(원인 + 해결책 세트로, 최대 2개)
 
-## ⭐ 종합 평가
-(한 줄 종합 평가)
+## 📊 수치 분석
+(같은 티어 평균 대비 CS/분, KDA, 피해량 등 구체 비교)
 
-**규칙:**
-- 각 섹션은 2-4줄로 간결하게
-- 구체적 수치를 활용해서 분석
-- 건설적이고 긍정적인 톤
-- 이모지를 적절히 활용
-- 실질적으로 도움이 되는 조언`,
+## ⭐ 다음 게임에서 딱 한 가지만 고친다면
+(가장 임팩트 큰 개선점 1개, 구체적 실천법)`,
         },
       ],
     });
