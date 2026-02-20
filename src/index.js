@@ -48,7 +48,7 @@ for (const file of commandFiles) {
 // ============================================
 // 봇 준비 완료
 // ============================================
-client.once(Events.ClientReady, (c) => {
+client.once(Events.ClientReady, async (c) => {
   console.log('\n========================================');
   console.log(`🤖 ${c.user.tag} 봇이 온라인입니다!`);
   console.log(`📊 ${c.guilds.cache.size}개의 서버에서 활동 중`);
@@ -57,8 +57,8 @@ client.once(Events.ClientReady, (c) => {
   // 상태 메시지 설정
   client.user.setActivity('/도움말 로 명령어 확인', { type: 3 }); // WATCHING
 
-  // 롤 패치노트 자동 체크 스케줄러 시작
-  startPatchScheduler(client);
+  // 롤 패치노트 자동 체크 스케줄러 시작 (패치 동기화 완료 후 cron 시작)
+  await startPatchScheduler(client);
 
   // 이벤트 알림 스케줄러 시작
   startEventScheduler(client);

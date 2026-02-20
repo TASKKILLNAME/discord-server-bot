@@ -69,7 +69,7 @@ function getAllPatchChannels() {
  * 패치노트 자동 체크 스케줄러 시작
  * 기본: 30분마다 확인, 모든 등록된 서버에 알림
  */
-function startPatchScheduler(client) {
+async function startPatchScheduler(client) {
   // 기존 .env 호환: LOL_PATCH_CHANNEL_ID가 있으면 자동 마이그레이션
   const legacyChannelId = process.env.LOL_PATCH_CHANNEL_ID;
   if (legacyChannelId) {
@@ -96,40 +96,38 @@ function startPatchScheduler(client) {
     console.log(`🔄 롤 패치노트 자동 체크 스케줄러 시작 (30분 간격, ${channels.length}개 서버)`);
   }
 
+  // ✅ cron 시작 전에 반드시 현재 패치 동기화 (재배포 시 중복 알림 방지)
+  console.log('🔍 초기 패치노트 동기화 (알림 없음)...');
+  await syncCurrentPatch();
+
   // 30분마다 체크 (*/30 * * * *)
   scheduledTask = cron.schedule('*/30 * * * *', async () => {
     console.log(`\n⏰ [${new Date().toLocaleString('ko-KR')}] 패치노트 체크 중...`);
     await checkAndNotifyAll(client);
   });
-
-  // 봇 시작 시 1분 후 현재 패치 동기화 (알림 없이 기록만)
-  setTimeout(async () => {
-    console.log('🔍 초기 패치노트 동기화 (알림 없음)...');
-    await syncCurrentPatch();
-  }, 60000);
 }
 
 /**
  * 현재 최신 패치를 기록만 하고 알림은 보내지 않음 (재시작 시 중복 알림 방지)
+ * Railway 재배포 시 data/ 파일이 사라지므로 매번 강제로 현재 패치를 기록
  */
 async function syncCurrentPatch() {
   try {
-    const lastPatch = loadLastPatch();
-    // 이미 기록된 패치가 있으면 동기화 불필요
-    if (lastPatch.lastUrl) {
-      console.log(`📋 기존 패치 기록 존재: ${lastPatch.lastTitle || lastPatch.lastUrl}`);
-      return;
-    }
-
-    // 기록이 없으면 (첫 실행 또는 파일 초기화) 현재 패치를 기록만
     const latest = await getLatestPatchUrl();
     if (latest.url) {
+      const lastPatch = loadLastPatch();
+      if (lastPatch.lastUrl === latest.url) {
+        console.log(`📋 패치 기록 최신 상태: ${lastPatch.lastTitle || latest.url}`);
+        return;
+      }
       saveLastPatch({
         lastUrl: latest.url,
         lastTitle: latest.title || '패치노트',
         checkedAt: new Date().toISOString(),
       });
       console.log(`📋 현재 패치 기록 완료: ${latest.title || latest.url} (알림 없음)`);
+    } else {
+      console.log('⚠️ 패치노트 URL을 가져올 수 없어 동기화 스킵');
     }
   } catch (err) {
     console.error('패치 동기화 실패:', err.message);
