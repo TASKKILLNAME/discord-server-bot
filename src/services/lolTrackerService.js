@@ -5,9 +5,30 @@ const { EmbedBuilder } = require('discord.js');
 const {
   getAccountByRiotId,
   getLiveGame,
+  getRankByPuuid,
+  formatRank,
   fetchLiveGameData,
 } = require('./riotService');
 const { analyzeLiveGame, parseAnalysisToFields } = require('./lolAnalyzer');
+
+// 티어 순서 (낮은 → 높은)
+const TIER_ORDER = [
+  'IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM',
+  'EMERALD', 'DIAMOND', 'MASTER', 'GRANDMASTER', 'CHALLENGER',
+];
+const RANK_ORDER = ['IV', 'III', 'II', 'I'];
+
+const TIER_KO = {
+  IRON: '아이언', BRONZE: '브론즈', SILVER: '실버', GOLD: '골드',
+  PLATINUM: '플래티넘', EMERALD: '에메랄드', DIAMOND: '다이아몬드',
+  MASTER: '마스터', GRANDMASTER: '그랜드마스터', CHALLENGER: '챌린저',
+};
+
+const TIER_EMOJI = {
+  IRON: '⬛', BRONZE: '🟫', SILVER: '⬜', GOLD: '🟨',
+  PLATINUM: '💎', EMERALD: '💚', DIAMOND: '💠',
+  MASTER: '🟣', GRANDMASTER: '🔴', CHALLENGER: '👑',
+};
 
 const DATA_FILE = path.join(__dirname, '../../data/lolTracker.json');
 
@@ -50,12 +71,25 @@ async function registerPlayer(guildId, discordUserId, gameName, tagLine) {
     data[guildId] = { channelId: null, players: {} };
   }
 
+  // 현재 랭크 저장 (랭크 변동 감지용)
+  let currentRank = null;
+  try {
+    const rankEntries = await getRankByPuuid(account.puuid);
+    const solo = rankEntries.find((r) => r.queueType === 'RANKED_SOLO_5x5');
+    if (solo) {
+      currentRank = { tier: solo.tier, rank: solo.rank, lp: solo.leaguePoints, wins: solo.wins, losses: solo.losses };
+    }
+  } catch (err) {
+    // 랭크 조회 실패 시 null
+  }
+
   data[guildId].players[discordUserId] = {
     gameName: account.gameName || gameName,
     tagLine: account.tagLine || tagLine,
     puuid: account.puuid,
     inGame: false,
     lastGameId: null,
+    lastRank: currentRank,
     registeredAt: new Date().toISOString(),
   };
 
@@ -136,9 +170,19 @@ async function checkAllPlayers(client) {
             console.error(`게임 알림 전송 실패 (${player.gameName}):`, err.message);
           });
         } else if (!liveGame && player.inGame) {
-          // 게임 종료
+          // 게임 종료 → 랭크 변동 체크
           player.inGame = false;
           changed = true;
+
+          // 게임 종료 후 랭크 체크 (10초 뒤, API 반영 대기)
+          setTimeout(async () => {
+            try {
+              await checkRankChange(channel, player, discordUserId);
+              saveTrackerData(loadTrackerData()); // 변경사항 저장
+            } catch (err) {
+              console.error(`랭크 체크 실패 (${player.gameName}):`, err.message);
+            }
+          }, 10000);
         }
       } catch (err) {
         // API 오류는 조용히 무시 (다음 주기에 재시도)
@@ -245,6 +289,147 @@ async function sendGameNotification(client, channel, player, discordUserId) {
   } catch (err) {
     console.error('게임 알림 전송 실패:', err.message);
   }
+}
+
+// ============================================
+// 🏆 랭크 변동 감지
+// ============================================
+
+/**
+ * 랭크 변동 체크: 이전 랭크와 비교하여 승급/강등 알림
+ */
+async function checkRankChange(channel, player, discordUserId) {
+  const rankEntries = await getRankByPuuid(player.puuid);
+  const solo = rankEntries.find((r) => r.queueType === 'RANKED_SOLO_5x5');
+
+  if (!solo) return;
+
+  const newRank = { tier: solo.tier, rank: solo.rank, lp: solo.leaguePoints, wins: solo.wins, losses: solo.losses };
+  const oldRank = player.lastRank;
+
+  // 이전 랭크가 없으면 (첫 기록) 저장만
+  if (!oldRank) {
+    player.lastRank = newRank;
+    return;
+  }
+
+  // 같으면 스킵
+  if (oldRank.tier === newRank.tier && oldRank.rank === newRank.rank) {
+    player.lastRank = newRank; // LP 등 업데이트
+    return;
+  }
+
+  const comparison = compareTiers(oldRank, newRank);
+
+  if (comparison > 0) {
+    // 🎉 승급!
+    await sendPromotionNotification(channel, player, discordUserId, oldRank, newRank);
+  } else if (comparison < 0) {
+    // 📉 강등
+    await sendDemotionNotification(channel, player, discordUserId, oldRank, newRank);
+  }
+
+  // 랭크 업데이트
+  player.lastRank = newRank;
+}
+
+/**
+ * 티어 비교: 양수 = 승급, 음수 = 강등, 0 = 동일
+ */
+function compareTiers(oldRank, newRank) {
+  const oldTierIdx = TIER_ORDER.indexOf(oldRank.tier);
+  const newTierIdx = TIER_ORDER.indexOf(newRank.tier);
+
+  if (newTierIdx !== oldTierIdx) {
+    return newTierIdx - oldTierIdx;
+  }
+
+  // 같은 티어 내 디비전 비교
+  const oldRankIdx = RANK_ORDER.indexOf(oldRank.rank);
+  const newRankIdx = RANK_ORDER.indexOf(newRank.rank);
+  return newRankIdx - oldRankIdx;
+}
+
+/**
+ * 🎉 승급 알림 전송
+ */
+async function sendPromotionNotification(channel, player, discordUserId, oldRank, newRank) {
+  const oldTierIdx = TIER_ORDER.indexOf(oldRank.tier);
+  const newTierIdx = TIER_ORDER.indexOf(newRank.tier);
+  const isTierUp = newTierIdx > oldTierIdx;
+
+  const oldDisplay = `${TIER_KO[oldRank.tier] || oldRank.tier} ${oldRank.rank}`;
+  const newDisplay = `${TIER_KO[newRank.tier] || newRank.tier} ${newRank.rank}`;
+  const emoji = TIER_EMOJI[newRank.tier] || '🎉';
+
+  // 마스터 이상 특별 축하
+  const isHighElo = ['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(newRank.tier);
+
+  let title, description, color;
+
+  if (isHighElo && isTierUp) {
+    // 🏆 마스터/그마/챌 진입 특별 메시지
+    const specialMessages = {
+      MASTER: '마스터 티어 달성! 상위 0.5%의 실력자입니다!',
+      GRANDMASTER: '그랜드마스터 진입! 진정한 고수의 영역입니다!',
+      CHALLENGER: '챌린저 달성!! 최강자의 반열에 올랐습니다!!!',
+    };
+
+    title = `👑🎆 ${player.gameName}님 ${TIER_KO[newRank.tier]} 승격!! 🎆👑`;
+    description =
+      `<@${discordUserId}>\n\n` +
+      `${emoji} **${specialMessages[newRank.tier]}**\n\n` +
+      `**${oldDisplay}** → **${newDisplay}** ${newRank.lp}LP\n` +
+      `전적: ${newRank.wins}승 ${newRank.losses}패 (${Math.round((newRank.wins / (newRank.wins + newRank.losses)) * 100)}%)\n\n` +
+      '🎊🎊🎊 축하합니다!! 🎊🎊🎊';
+    color = newRank.tier === 'CHALLENGER' ? 0xffd700 : newRank.tier === 'GRANDMASTER' ? 0xff4444 : 0x9b59b6;
+  } else if (isTierUp) {
+    // 🎉 일반 티어 승급
+    title = `🎉 ${player.gameName}님 ${TIER_KO[newRank.tier]} 승급!`;
+    description =
+      `<@${discordUserId}>\n\n` +
+      `${emoji} **${oldDisplay}** → **${newDisplay}** ${newRank.lp}LP\n` +
+      `전적: ${newRank.wins}승 ${newRank.losses}패 (${Math.round((newRank.wins / (newRank.wins + newRank.losses)) * 100)}%)\n\n` +
+      '🎉 축하합니다!';
+    color = 0x57f287;
+  } else {
+    // 📈 디비전 승급
+    title = `📈 ${player.gameName}님 승급!`;
+    description =
+      `<@${discordUserId}>\n\n` +
+      `${emoji} **${oldDisplay}** → **${newDisplay}** ${newRank.lp}LP\n` +
+      `전적: ${newRank.wins}승 ${newRank.losses}패 (${Math.round((newRank.wins / (newRank.wins + newRank.losses)) * 100)}%)`;
+    color = 0x3498db;
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(color)
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
+}
+
+/**
+ * 📉 강등 알림 전송
+ */
+async function sendDemotionNotification(channel, player, discordUserId, oldRank, newRank) {
+  const oldDisplay = `${TIER_KO[oldRank.tier] || oldRank.tier} ${oldRank.rank}`;
+  const newDisplay = `${TIER_KO[newRank.tier] || newRank.tier} ${newRank.rank}`;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📉 ${player.gameName}님 강등...`)
+    .setDescription(
+      `<@${discordUserId}>\n\n` +
+      `**${oldDisplay}** → **${newDisplay}** ${newRank.lp}LP\n` +
+      `전적: ${newRank.wins}승 ${newRank.losses}패 (${Math.round((newRank.wins / (newRank.wins + newRank.losses)) * 100)}%)\n\n` +
+      '💪 다시 올라갈 수 있습니다! 힘내세요!'
+    )
+    .setColor(0x95a5a6)
+    .setTimestamp();
+
+  await channel.send({ embeds: [embed] });
 }
 
 function stopLolTracker() {
