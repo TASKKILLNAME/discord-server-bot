@@ -28,16 +28,24 @@ module.exports = {
     .addSubcommand((sub) =>
       sub
         .setName('등록')
-        .setDescription('내 롤 계정을 등록합니다 (게임 자동 감지)')
+        .setDescription('롤 계정을 등록합니다 (게임 자동 감지)')
         .addStringOption((opt) =>
           opt.setName('소환사명').setDescription('게임 이름 (예: Hide on bush)').setRequired(true)
         )
         .addStringOption((opt) =>
           opt.setName('태그').setDescription('태그라인 (예: KR1)').setRequired(true)
         )
+        .addUserOption((opt) =>
+          opt.setName('멤버').setDescription('등록할 멤버 (미입력 시 본인)')
+        )
     )
     .addSubcommand((sub) =>
-      sub.setName('해제').setDescription('내 롤 계정 등록을 해제합니다')
+      sub
+        .setName('해제')
+        .setDescription('롤 계정 등록을 해제합니다')
+        .addUserOption((opt) =>
+          opt.setName('멤버').setDescription('해제할 멤버 (미입력 시 본인)')
+        )
     )
     .addSubcommand((sub) =>
       sub.setName('목록').setDescription('이 서버에 등록된 소환사 목록을 확인합니다')
@@ -109,21 +117,24 @@ module.exports = {
   async register(interaction) {
     const gameName = interaction.options.getString('소환사명');
     const tagLine = interaction.options.getString('태그');
+    const targetUser = interaction.options.getUser('멤버') || interaction.user;
+    const isSelf = targetUser.id === interaction.user.id;
 
     await interaction.deferReply({ ephemeral: true });
 
     try {
       const account = await registerPlayer(
         interaction.guild.id,
-        interaction.user.id,
+        targetUser.id,
         gameName,
         tagLine
       );
 
+      const targetDisplay = isSelf ? '' : ` (<@${targetUser.id}>님의)`;
       const embed = new EmbedBuilder()
         .setTitle('✅ 롤 계정 등록 완료!')
         .setDescription(
-          `**${account.gameName}#${account.tagLine}** 계정이 등록되었습니다.\n\n` +
+          `${targetDisplay}**${account.gameName}#${account.tagLine}** 계정이 등록되었습니다.\n\n` +
             '게임을 시작하면 자동으로 AI 분석이 알림 채널에 전송됩니다!\n' +
             '`/전적 채널설정`으로 알림 채널을 설정해주세요.'
         )
@@ -142,18 +153,20 @@ module.exports = {
   // 🗑️ 등록 해제
   // ============================================
   async unregister(interaction) {
-    const removed = unregisterPlayer(interaction.guild.id, interaction.user.id);
+    const targetUser = interaction.options.getUser('멤버') || interaction.user;
+    const isSelf = targetUser.id === interaction.user.id;
+    const removed = unregisterPlayer(interaction.guild.id, targetUser.id);
 
     if (removed) {
-      await interaction.reply({
-        content: '✅ 롤 계정 등록이 해제되었습니다.',
-        ephemeral: true,
-      });
+      const msg = isSelf
+        ? '✅ 롤 계정 등록이 해제되었습니다.'
+        : `✅ <@${targetUser.id}>님의 롤 계정 등록이 해제되었습니다.`;
+      await interaction.reply({ content: msg, ephemeral: true });
     } else {
-      await interaction.reply({
-        content: '❌ 등록된 계정이 없습니다.',
-        ephemeral: true,
-      });
+      const msg = isSelf
+        ? '❌ 등록된 계정이 없습니다.'
+        : `❌ <@${targetUser.id}>님의 등록된 계정이 없습니다.`;
+      await interaction.reply({ content: msg, ephemeral: true });
     }
   },
 
