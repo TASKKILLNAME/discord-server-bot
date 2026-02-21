@@ -15,8 +15,6 @@ const {
 } = require('../services/riotService');
 const { profilePlaystyle } = require('../services/playstyleProfiler');
 const { analyzeMetaImpact, parseCoachingToFields } = require('../services/coachAnalyzer');
-const { hasCredit, useCredit, getCredits } = require('../services/membershipService');
-
 const PATCH_DATA_FILE = path.join(__dirname, '../../data/patch.json');
 
 module.exports = {
@@ -45,24 +43,7 @@ module.exports = {
     const gameName = rawInput.substring(0, hashIndex).trim();
     const tagLine = rawInput.substring(hashIndex + 1).trim();
 
-    // 2. 크레딧 체크 (2회 필요)
-    const currentCredits = getCredits(interaction.guild.id, interaction.user.id);
-    if (currentCredits < 2) {
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 크레딧 부족')
-            .setDescription(
-              `메타 분석에는 크레딧 2회가 필요합니다. (잔여: ${currentCredits}회)\n\n` +
-                '`/멤버십 구매`로 크레딧을 충전해주세요.'
-            )
-            .setColor(0xff0000),
-        ],
-        ephemeral: true,
-      });
-    }
-
-    // 3. deferReply
+    // 2. deferReply
     await interaction.deferReply();
 
     try {
@@ -72,8 +53,7 @@ module.exports = {
         .setDescription(
           `**${gameName}#${tagLine}** 최근 50게임을 분석합니다.\n` +
             '50게임 수집 → 플레이스타일 프로파일링 → 패치 분석 → AI 코칭\n' +
-            '잠시만 기다려주세요... (약 30~90초)\n\n' +
-            `💳 잔여 크레딧: ${currentCredits}회 (2회 차감 예정)`
+            '잠시만 기다려주세요... (약 30~90초)'
         )
         .setColor(0xf0b232);
       await interaction.editReply({ embeds: [loadingEmbed] });
@@ -160,11 +140,7 @@ module.exports = {
       const metaAnalysis = await analyzeMetaImpact(playstyleProfile, patchData);
       const analysisFields = parseCoachingToFields(metaAnalysis);
 
-      // 12. 크레딧 차감 (2회)
-      useCredit(interaction.guild.id, interaction.user.id, '메타 분석 (1/2)');
-      useCredit(interaction.guild.id, interaction.user.id, '메타 분석 (2/2)');
-
-      // 13. 결과 전송
+      // 12. 결과 전송
       // 프로필 Embed
       const profileEmbed = new EmbedBuilder()
         .setTitle(`📊 ${gameName}#${tagLine} — 메타 코칭`)

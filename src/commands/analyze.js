@@ -15,8 +15,6 @@ const {
 const { parseMatchTimeline } = require('../services/matchParser');
 const { analyzeDecisions, parseCoachingToFields } = require('../services/coachAnalyzer');
 const { renderAnalysisReport } = require('../services/reportRenderer');
-const { hasCredit, useCredit, getCredits } = require('../services/membershipService');
-
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('분석')
@@ -43,37 +41,17 @@ module.exports = {
     const gameName = rawInput.substring(0, hashIndex).trim();
     const tagLine = rawInput.substring(hashIndex + 1).trim();
 
-    // 2. 크레딧 체크
-    if (!hasCredit(interaction.guild.id, interaction.user.id)) {
-      const remaining = getCredits(interaction.guild.id, interaction.user.id);
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 크레딧 부족')
-            .setDescription(
-              `AI 분석 크레딧이 부족합니다. (잔여: ${remaining}회)\n\n` +
-                '`/멤버십 구매`로 크레딧을 충전해주세요.'
-            )
-            .setColor(0xff0000),
-        ],
-        ephemeral: true,
-      });
-    }
-
-    // 3. deferReply
+    // 2. deferReply
     await interaction.deferReply();
 
     try {
-      const credits = getCredits(interaction.guild.id, interaction.user.id);
-
       // 로딩 메시지
       const loadingEmbed = new EmbedBuilder()
         .setTitle('🧠 AI 코치 분석 중...')
         .setDescription(
           `**${gameName}#${tagLine}** 최근 게임의 의사결정을 분석합니다.\n` +
             '타임라인 데이터 수집 → 의사결정 분해 → AI 코칭 → 이미지 생성\n' +
-            '잠시만 기다려주세요... (약 20~50초)\n\n' +
-            `💳 잔여 크레딧: ${credits}회`
+            '잠시만 기다려주세요... (약 20~50초)'
         )
         .setColor(0xf0b232);
       await interaction.editReply({ embeds: [loadingEmbed] });
@@ -165,10 +143,7 @@ module.exports = {
         imageBuffer = null;
       }
 
-      // 13. 크레딧 차감
-      useCredit(interaction.guild.id, interaction.user.id, '심층 분석');
-
-      // 14. 결과 전송
+      // 13. 결과 전송
       if (imageBuffer) {
         const attachment = new AttachmentBuilder(imageBuffer, {
           name: 'analysis-report.png',
