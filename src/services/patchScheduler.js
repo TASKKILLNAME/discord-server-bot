@@ -2,12 +2,13 @@ const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
 const { checkForNewPatch, getLatestPatchUrl, loadLastPatch, saveLastPatch } = require('./patchCrawler');
-const { summarizePatchNotes, formatForDiscord } = require('./aiSummarizer');
+const { summarizePatchNotes, formatForDiscord, extractStructuredPatchData } = require('./aiSummarizer');
 const { EmbedBuilder } = require('discord.js');
 
 let scheduledTask = null;
 
 const PATCH_CHANNELS_FILE = path.join(__dirname, '../../data/patchChannels.json');
+const PATCH_DATA_FILE = path.join(__dirname, '../../data/patch.json');
 
 // ============================================
 // 📁 서버별 패치 채널 데이터 관리
@@ -151,6 +152,25 @@ async function checkAndNotifyAll(client) {
     // AI 요약 (한 번만 생성)
     const summary = await summarizePatchNotes(patchData);
     const embedData = formatForDiscord(summary, patchData);
+
+    // 구조화된 패치 데이터 추출 → data/patch.json 저장
+    try {
+      const structuredData = await extractStructuredPatchData(patchData);
+      if (structuredData) {
+        const patchJsonData = {
+          version: patchData.title || '',
+          updatedAt: new Date().toISOString(),
+          url: patchData.url || '',
+          ...structuredData,
+        };
+        const dir = path.dirname(PATCH_DATA_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(PATCH_DATA_FILE, JSON.stringify(patchJsonData, null, 2));
+        console.log('📦 patch.json 생성 완료');
+      }
+    } catch (patchErr) {
+      console.error('patch.json 생성 실패 (알림은 계속 전송):', patchErr.message);
+    }
 
     // 모든 등록된 서버에 전송
     const channels = getAllPatchChannels();

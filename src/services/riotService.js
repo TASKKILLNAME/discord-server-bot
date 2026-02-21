@@ -120,6 +120,14 @@ async function getMatchDetail(matchId) {
   return await riotApiRequest(url);
 }
 
+/**
+ * 매치 타임라인 조회 (Match-v5 Timeline)
+ */
+async function getMatchTimeline(matchId) {
+  const url = `${REGIONAL_URL}/lol/match/v5/matches/${encodeURIComponent(matchId)}/timeline`;
+  return await riotApiRequest(url);
+}
+
 // ============================================
 // 📦 정적 데이터 (Data Dragon)
 // ============================================
@@ -384,6 +392,7 @@ module.exports = {
   getRankByPuuid,
   getRecentMatchIds,
   getMatchDetail,
+  getMatchTimeline,
   getChampionName,
   getSpellName,
   formatRank,

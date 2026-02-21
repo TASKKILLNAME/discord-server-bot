@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1080px;
+    min-height: 1080px;
+    background: #0a0e14;
+    color: #dcddde;
+    font-family: 'Noto Sans CJK KR', 'Malgun Gothic', sans-serif;
+    padding: 32px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #1a1f2e;
+  }
+
+  .player-info h1 {
+    font-size: 28px;
+    color: #ffffff;
+    margin-bottom: 6px;
+  }
+
+  .player-info .rank {
+    font-size: 16px;
+    color: #99aab5;
+  }
+
+  .game-result {
+    text-align: right;
+  }
+
+  .game-result .result-badge {
+    font-size: 24px;
+    font-weight: 700;
+    padding: 8px 24px;
+    border-radius: 8px;
+    color: #ffffff;
+    background: {{RESULT_COLOR}};
+  }
+
+  .game-result .champion-name {
+    font-size: 18px;
+    color: #f0b232;
+    margin-top: 8px;
+  }
+
+  .game-result .duration {
+    font-size: 14px;
+    color: #99aab5;
+    margin-top: 4px;
+  }
+
+  /* Stats Grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: #1a1f2e;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+    border: 1px solid #2a2f3e;
+  }
+
+  .stat-card .stat-label {
+    font-size: 12px;
+    color: #99aab5;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+
+  .stat-card .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ffffff;
+  }
+
+  .stat-card .stat-sub {
+    font-size: 12px;
+    color: #72767d;
+    margin-top: 4px;
+  }
+
+  /* Death Table */
+  .section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f0b232;
+    margin-bottom: 12px;
+    padding-left: 8px;
+    border-left: 3px solid #f0b232;
+  }
+
+  .death-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+    background: #1a1f2e;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .death-table th {
+    background: #252a3a;
+    color: #99aab5;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 10px 16px;
+    text-align: left;
+  }
+
+  .death-table td {
+    padding: 10px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid #2a2f3e;
+    color: #dcddde;
+  }
+
+  .death-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .gold-positive { color: #57f287; font-weight: 600; }
+  .gold-negative { color: #ed4245; font-weight: 600; }
+  .gold-neutral { color: #99aab5; }
+
+  /* Coach Feedback */
+  .coach-section {
+    background: #1a1f2e;
+    border-radius: 10px;
+    padding: 24px;
+    border: 1px solid #2a2f3e;
+    border-left: 4px solid #f0b232;
+  }
+
+  .coach-section h3 {
+    font-size: 16px;
+    color: #f0b232;
+    margin: 16px 0 8px 0;
+  }
+
+  .coach-section h3:first-child {
+    margin-top: 0;
+  }
+
+  .coach-section p, .coach-section li, .coach-section br + br {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #dcddde;
+  }
+
+  .coach-section ul {
+    padding-left: 20px;
+    margin: 4px 0;
+  }
+
+  .coach-section li {
+    margin-bottom: 4px;
+  }
+
+  .coach-section strong {
+    color: #ffffff;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 12px;
+    color: #4a4f5e;
+    padding-top: 12px;
+    border-top: 1px solid #1a1f2e;
+  }
+
+  /* Additional Stats Row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .mini-stat {
+    background: #1a1f2e;
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #2a2f3e;
+  }
+
+  .mini-stat .label {
+    font-size: 13px;
+    color: #99aab5;
+  }
+
+  .mini-stat .value {
+    font-size: 16px;
+    font-weight: 600;
+    color: #ffffff;
+  }
+</style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="player-info">
+      <h1>{{PLAYER_NAME}}</h1>
+      <div class="rank">{{RANK}}</div>
+    </div>
+    <div class="game-result">
+      <div class="result-badge">{{RESULT}}</div>
+      <div class="champion-name">{{CHAMPION}} ({{ROLE}})</div>
+      <div class="duration">{{GAME_DURATION}}</div>
+    </div>
+  </div>
+
+  <!-- Primary Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">KDA</div>
+      <div class="stat-value">{{KDA}}</div>
+      <div class="stat-sub">{{KDA_RATIO}} KDA</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">10분 골드차</div>
+      <div class="stat-value">{{GOLD_DIFF_10}}</div>
+      <div class="stat-sub">CS {{CS_AT_10}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">15분 골드차</div>
+      <div class="stat-value">{{GOLD_DIFF_15}}</div>
+      <div class="stat-sub">CS {{CS_AT_15}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">사망 횟수</div>
+      <div class="stat-value">{{DEATHS_COUNT}}</div>
+      <div class="stat-sub">상세 아래</div>
+    </div>
+  </div>
+
+  <!-- Secondary Stats -->
+  <div class="stats-row">
+    <div class="mini-stat">
+      <span class="label">오브젝트 참여</span>
+      <span class="value">{{OBJ_PARTICIPATION}}</span>
+    </div>
+    <div class="mini-stat">
+      <span class="label">킬관여율</span>
+      <span class="value">{{KILL_PARTICIPATION}}</span>
+    </div>
+    <div class="mini-stat">
+      <span class="label">딜량</span>
+      <span class="value">{{DAMAGE_DEALT}}</span>
+    </div>
+    <div class="mini-stat">
+      <span class="label">와드 설치</span>
+      <span class="value">{{VISION_TOTAL}} ({{VISION_EARLY}}/{{VISION_LATE}})</span>
+    </div>
+    <div class="mini-stat">
+      <span class="label">솔로킬</span>
+      <span class="value">{{SOLO_KILLS}}</span>
+    </div>
+    <div class="mini-stat">
+      <span class="label">리콜</span>
+      <span class="value">-</span>
+    </div>
+  </div>
+
+  <!-- Death Analysis Table -->
+  <div class="section-title">사망 분석</div>
+  <table class="death-table">
+    <thead>
+      <tr>
+        <th>시간</th>
+        <th>위치</th>
+        <th>1분전 골드차</th>
+        <th>상황</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{DEATH_TABLE_ROWS}}
+    </tbody>
+  </table>
+
+  <!-- AI Coach Feedback -->
+  <div class="section-title">AI 코치 피드백</div>
+  <div class="coach-section">
+    {{COACH_FEEDBACK}}
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    AI Coach Report | Powered by Claude AI | Data from Riot Games API
+  </div>
+</body>
+</html>

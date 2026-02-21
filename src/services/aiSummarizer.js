@@ -147,7 +147,56 @@ function formatForDiscord(summary, patchData) {
   };
 }
 
+/**
+ * 패치노트에서 구조화된 데이터 추출 (patch.json용)
+ * 챔피언/아이템/시스템 변경사항을 JSON으로 분리
+ */
+async function extractStructuredPatchData(patchData) {
+  const anthropic = getClient();
+  if (!anthropic) return null;
+
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: `다음 패치노트에서 챔피언 변경사항, 아이템 변경사항, 시스템 변경사항을 JSON으로 추출해라.
+반드시 아래 JSON 형식으로만 응답해라 (설명 없이 순수 JSON만):
+
+{
+  "champions": [{"name": "챔피언명(한글)", "type": "buff|nerf|adjust", "changes": "변경 요약(수치 포함)"}],
+  "items": [{"name": "아이템명(한글)", "changes": "변경 요약(수치 포함)"}],
+  "systemChanges": ["변경사항1", "변경사항2"]
+}
+
+규칙:
+- champions의 name은 한글 챔피언명 사용 (아리, 징크스, 야스오 등)
+- type은 buff(상향), nerf(하향), adjust(조정) 중 하나
+- 수치 변경이 있으면 반드시 포함 (예: "Q 데미지 70 → 80")
+- 변경이 없는 카테고리는 빈 배열 []
+
+패치노트:
+${patchData.content}`,
+        },
+      ],
+    });
+
+    const jsonStr = message.content[0].text
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    console.error('패치 데이터 구조화 실패:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   summarizePatchNotes,
   formatForDiscord,
+  extractStructuredPatchData,
 };
