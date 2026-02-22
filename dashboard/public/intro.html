@@ -259,23 +259,153 @@
       font-size: 28px;
     }
 
-    /* ===== Architecture ===== */
-    .arch-box {
+    /* ===== Architecture Tree ===== */
+    .arch-tree {
       background: #1a1f2e;
       border: 1px solid #2a2f3e;
       border-radius: 14px;
-      padding: 32px;
-      font-family: 'Courier New', monospace;
-      font-size: 14px;
-      color: #99aab5;
-      line-height: 1.8;
+      padding: 32px 32px 32px 24px;
       overflow-x: auto;
     }
 
-    .arch-box .highlight { color: #f0b232; }
-    .arch-box .dir { color: #5865f2; }
-    .arch-box .file { color: #57f287; }
-    .arch-box .comment { color: #4a4f5e; }
+    .tree-root {
+      font-size: 15px;
+      font-weight: 700;
+      color: #5865f2;
+      padding: 0 0 14px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tree-list {
+      list-style: none;
+      padding-left: 24px;
+      margin: 0;
+    }
+
+    .tree-item {
+      position: relative;
+      padding: 6px 0 6px 28px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #99aab5;
+      border-radius: 6px;
+      transition: background 0.2s ease;
+    }
+
+    /* Vertical connector line */
+    .tree-list > .tree-item::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 0;
+      bottom: 0;
+      width: 1.5px;
+      background: #2a2f3e;
+    }
+
+    /* Horizontal branch */
+    .tree-list > .tree-item::after {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 17px;
+      width: 14px;
+      height: 1.5px;
+      background: #2a2f3e;
+    }
+
+    /* Last child: cut vertical line at branch point */
+    .tree-list > .tree-item:last-child::before {
+      height: 17px;
+      bottom: auto;
+    }
+
+    .tree-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+      z-index: 1;
+      transition: transform 0.15s ease;
+    }
+
+    .tree-item:hover {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .tree-item:hover > .tree-label {
+      transform: translateX(3px);
+    }
+
+    .tree-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+      width: 20px;
+      text-align: center;
+    }
+
+    .tree-name--dir {
+      color: #5865f2;
+      font-weight: 600;
+    }
+
+    .tree-name--file {
+      color: #57f287;
+      font-weight: 500;
+    }
+
+    .tree-name--highlight {
+      color: #f0b232;
+      font-weight: 600;
+    }
+
+    .tree-comment {
+      color: #4a4f5e;
+      font-size: 13px;
+      margin-left: 4px;
+    }
+
+    .tree-item--featured {
+      background: rgba(240, 178, 50, 0.03);
+      border-left: 2px solid rgba(240, 178, 50, 0.25);
+      margin-left: -2px;
+      padding-left: 30px;
+    }
+
+    .tree-item--featured:hover {
+      background: rgba(240, 178, 50, 0.07);
+      border-left-color: #f0b232;
+    }
+
+    .tree-item--featured .tree-comment {
+      color: #f0b232;
+      opacity: 0.7;
+    }
+
+    /* Tree scroll-in animation */
+    .arch-tree .tree-item {
+      opacity: 0;
+      transform: translateX(-10px);
+      transition: opacity 0.35s ease, transform 0.35s ease, background 0.2s ease;
+    }
+
+    .arch-tree.visible .tree-item {
+      opacity: 1;
+      transform: translateX(0);
+    }
+
+    .arch-tree .tree-root {
+      opacity: 0;
+      transform: translateX(-10px);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+
+    .arch-tree.visible .tree-root {
+      opacity: 1;
+      transform: translateX(0);
+    }
 
     /* ===== Commands ===== */
     .commands-list {
@@ -337,6 +467,10 @@
       .hero-buttons { flex-direction: column; align-items: center; }
       .btn { width: 100%; max-width: 280px; justify-content: center; }
       .commands-list { grid-template-columns: 1fr; }
+      .arch-tree { padding: 20px 16px 20px 12px; border-radius: 10px; }
+      .tree-list { padding-left: 18px; }
+      .tree-item { font-size: 13px; padding: 4px 0 4px 24px; }
+      .tree-comment { display: none; }
     }
   </style>
 </head>
@@ -513,28 +647,169 @@
     <h2 class="section-title">프로젝트 구조</h2>
     <p class="section-desc">모듈화된 서비스 레이어와 커맨드 핸들러 패턴</p>
 
-    <div class="arch-box">
-<span class="dir">discord-server-bot/</span>
-├── <span class="dir">src/</span>
-│   ├── <span class="file">index.js</span>              <span class="comment"># Entry Point + Event Handler</span>
-│   ├── <span class="dir">commands/</span>             <span class="comment"># 15개 슬래시 명령어</span>
-│   │   ├── <span class="file">analyze.js</span>        <span class="highlight"># /분석 — AI 코치 심층 분석</span>
-│   │   ├── <span class="file">meta.js</span>           <span class="highlight"># /메타 — 메타 적응 코칭</span>
-│   │   ├── <span class="file">lol.js</span>            <span class="comment"># /전적 — 실시간 + 최근전적</span>
-│   │   └── <span class="comment">... 12개 추가 명령어</span>
-│   ├── <span class="dir">services/</span>             <span class="comment"># 비즈니스 로직</span>
-│   │   ├── <span class="file">riotService.js</span>    <span class="comment"># Riot API (Rate Limit Queue)</span>
-│   │   ├── <span class="file">matchParser.js</span>    <span class="highlight"># 타임라인 의사결정 분해기</span>
-│   │   ├── <span class="file">coachAnalyzer.js</span>  <span class="highlight"># Claude AI 코칭 엔진</span>
-│   │   ├── <span class="file">playstyleProfiler.js</span> <span class="highlight"># 플레이스타일 프로파일링</span>
-│   │   ├── <span class="file">reportRenderer.js</span> <span class="highlight"># Puppeteer 이미지 생성</span>
-│   │   └── <span class="comment">... 6개 추가 서비스</span>
-│   └── <span class="dir">templates/</span>            <span class="comment"># HTML 리포트 템플릿</span>
-├── <span class="dir">dashboard/</span>                <span class="comment"># Express 웹 대시보드</span>
-│   ├── <span class="file">server.js</span>             <span class="comment"># 30+ API 엔드포인트</span>
-│   └── <span class="dir">public/</span>               <span class="comment"># 프론트엔드</span>
-├── <span class="dir">data/</span>                     <span class="comment"># JSON 영속 데이터</span>
-└── <span class="file">Dockerfile</span>               <span class="comment"># Docker 배포 설정</span>
+    <div class="arch-tree">
+      <div class="tree-root">
+        <span class="tree-icon">📂</span>
+        <span class="tree-name--dir">discord-server-bot/</span>
+      </div>
+
+      <ul class="tree-list">
+        <!-- src/ -->
+        <li class="tree-item">
+          <span class="tree-label">
+            <span class="tree-icon">📂</span>
+            <span class="tree-name--dir">src/</span>
+          </span>
+          <ul class="tree-list">
+            <li class="tree-item">
+              <span class="tree-label">
+                <span class="tree-icon">📄</span>
+                <span class="tree-name--file">index.js</span>
+                <span class="tree-comment"># Entry Point + Event Handler</span>
+              </span>
+            </li>
+            <!-- commands/ -->
+            <li class="tree-item">
+              <span class="tree-label">
+                <span class="tree-icon">📂</span>
+                <span class="tree-name--dir">commands/</span>
+                <span class="tree-comment"># 15개 슬래시 명령어</span>
+              </span>
+              <ul class="tree-list">
+                <li class="tree-item tree-item--featured">
+                  <span class="tree-label">
+                    <span class="tree-icon">⚡</span>
+                    <span class="tree-name--highlight">analyze.js</span>
+                    <span class="tree-comment"># /분석 — AI 코치 심층 분석</span>
+                  </span>
+                </li>
+                <li class="tree-item tree-item--featured">
+                  <span class="tree-label">
+                    <span class="tree-icon">⚡</span>
+                    <span class="tree-name--highlight">meta.js</span>
+                    <span class="tree-comment"># /메타 — 메타 적응 코칭</span>
+                  </span>
+                </li>
+                <li class="tree-item">
+                  <span class="tree-label">
+                    <span class="tree-icon">📄</span>
+                    <span class="tree-name--file">lol.js</span>
+                    <span class="tree-comment"># /전적 — 실시간 + 최근전적</span>
+                  </span>
+                </li>
+                <li class="tree-item">
+                  <span class="tree-label">
+                    <span class="tree-icon">📋</span>
+                    <span class="tree-comment">... 12개 추가 명령어</span>
+                  </span>
+                </li>
+              </ul>
+            </li>
+            <!-- services/ -->
+            <li class="tree-item">
+              <span class="tree-label">
+                <span class="tree-icon">📂</span>
+                <span class="tree-name--dir">services/</span>
+                <span class="tree-comment"># 비즈니스 로직</span>
+              </span>
+              <ul class="tree-list">
+                <li class="tree-item">
+                  <span class="tree-label">
+                    <span class="tree-icon">📄</span>
+                    <span class="tree-name--file">riotService.js</span>
+                    <span class="tree-comment"># Riot API (Rate Limit Queue)</span>
+                  </span>
+                </li>
+                <li class="tree-item tree-item--featured">
+                  <span class="tree-label">
+                    <span class="tree-icon">⚡</span>
+                    <span class="tree-name--highlight">matchParser.js</span>
+                    <span class="tree-comment"># 타임라인 의사결정 분해</span>
+                  </span>
+                </li>
+                <li class="tree-item tree-item--featured">
+                  <span class="tree-label">
+                    <span class="tree-icon">⚡</span>
+                    <span class="tree-name--highlight">coachAnalyzer.js</span>
+                    <span class="tree-comment"># Claude AI 코칭 엔진</span>
+                  </span>
+                </li>
+                <li class="tree-item tree-item--featured">
+                  <span class="tree-label">
+                    <span class="tree-icon">⚡</span>
+                    <span class="tree-name--highlight">playstyleProfiler.js</span>
+                    <span class="tree-comment"># 플레이스타일 프로파일링</span>
+                  </span>
+                </li>
+                <li class="tree-item tree-item--featured">
+                  <span class="tree-label">
+                    <span class="tree-icon">⚡</span>
+                    <span class="tree-name--highlight">reportRenderer.js</span>
+                    <span class="tree-comment"># Puppeteer 이미지 생성</span>
+                  </span>
+                </li>
+                <li class="tree-item">
+                  <span class="tree-label">
+                    <span class="tree-icon">📋</span>
+                    <span class="tree-comment">... 6개 추가 서비스</span>
+                  </span>
+                </li>
+              </ul>
+            </li>
+            <!-- templates/ -->
+            <li class="tree-item">
+              <span class="tree-label">
+                <span class="tree-icon">📂</span>
+                <span class="tree-name--dir">templates/</span>
+                <span class="tree-comment"># HTML 리포트 템플릿</span>
+              </span>
+            </li>
+          </ul>
+        </li>
+
+        <!-- dashboard/ -->
+        <li class="tree-item">
+          <span class="tree-label">
+            <span class="tree-icon">📂</span>
+            <span class="tree-name--dir">dashboard/</span>
+            <span class="tree-comment"># Express 웹 대시보드</span>
+          </span>
+          <ul class="tree-list">
+            <li class="tree-item">
+              <span class="tree-label">
+                <span class="tree-icon">📄</span>
+                <span class="tree-name--file">server.js</span>
+                <span class="tree-comment"># 30+ API 엔드포인트</span>
+              </span>
+            </li>
+            <li class="tree-item">
+              <span class="tree-label">
+                <span class="tree-icon">📂</span>
+                <span class="tree-name--dir">public/</span>
+                <span class="tree-comment"># 프론트엔드</span>
+              </span>
+            </li>
+          </ul>
+        </li>
+
+        <!-- data/ -->
+        <li class="tree-item">
+          <span class="tree-label">
+            <span class="tree-icon">📂</span>
+            <span class="tree-name--dir">data/</span>
+            <span class="tree-comment"># JSON 영속 데이터</span>
+          </span>
+        </li>
+
+        <!-- Dockerfile -->
+        <li class="tree-item">
+          <span class="tree-label">
+            <span class="tree-icon">🐳</span>
+            <span class="tree-name--file">Dockerfile</span>
+            <span class="tree-comment"># Docker 배포 설정</span>
+          </span>
+        </li>
+      </ul>
     </div>
   </section>
 
@@ -612,6 +887,17 @@
       card.style.transitionDelay = `${i * 80}ms`;
       observer.observe(card);
     });
+
+    // Architecture tree cascade animation
+    const archTree = document.querySelector('.arch-tree');
+    if (archTree) {
+      observer.observe(archTree);
+      archTree.querySelectorAll('.tree-item').forEach((item, i) => {
+        item.style.transitionDelay = `${i * 40}ms`;
+      });
+      const treeRoot = archTree.querySelector('.tree-root');
+      if (treeRoot) treeRoot.style.transitionDelay = '0ms';
+    }
   </script>
 
 </body>
