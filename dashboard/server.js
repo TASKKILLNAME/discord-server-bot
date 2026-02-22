@@ -787,6 +787,13 @@ app.post('/api/membership/:guildId/:userId/charge', requireOwner, requireBot, as
 });
 
 // ============================================
+// Intro Page
+// ============================================
+app.get('/intro', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'intro.html'));
+});
+
+// ============================================
 // SPA Fallback
 // ============================================
 app.get('*', (req, res) => {

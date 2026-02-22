@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LoL AI Coach Bot — Project Introduction</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0e14;
+      color: #dcddde;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ===== Hero ===== */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+      position: relative;
+      background:
+        radial-gradient(ellipse at 20% 50%, rgba(240, 178, 50, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse at 80% 50%, rgba(88, 101, 242, 0.08) 0%, transparent 60%),
+        #0a0e14;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      background: rgba(240, 178, 50, 0.15);
+      color: #f0b232;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 1px solid rgba(240, 178, 50, 0.3);
+      margin-bottom: 24px;
+      letter-spacing: 0.5px;
+    }
+
+    .hero h1 {
+      font-size: clamp(36px, 6vw, 64px);
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 16px;
+      line-height: 1.1;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, #f0b232, #ff6b6b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-desc {
+      font-size: clamp(16px, 2vw, 20px);
+      color: #99aab5;
+      max-width: 600px;
+      margin-bottom: 40px;
+    }
+
+    .hero-buttons {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 28px;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #f0b232, #e09a1e);
+      color: #0a0e14;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(240, 178, 50, 0.3);
+    }
+
+    .btn-secondary {
+      background: #1a1f2e;
+      color: #dcddde;
+      border: 1px solid #2a2f3e;
+    }
+    .btn-secondary:hover {
+      background: #252a3a;
+      transform: translateY(-2px);
+    }
+
+    .scroll-hint {
+      position: absolute;
+      bottom: 32px;
+      animation: bounce 2s infinite;
+      color: #4a4f5e;
+      font-size: 24px;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(8px); }
+    }
+
+    /* ===== Section Common ===== */
+    section {
+      padding: 80px 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      color: #f0b232;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 16px;
+    }
+
+    .section-desc {
+      color: #99aab5;
+      font-size: 16px;
+      max-width: 560px;
+      margin-bottom: 48px;
+    }
+
+    /* ===== Features Grid ===== */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: #1a1f2e;
+      border: 1px solid #2a2f3e;
+      border-radius: 14px;
+      padding: 28px;
+      transition: all 0.3s ease;
+      opacity: 0;
+      transform: translateY(24px);
+    }
+
+    .feature-card.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .feature-card:hover {
+      border-color: #f0b232;
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .feature-icon {
+      font-size: 32px;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .feature-card h3 {
+      font-size: 18px;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+
+    .feature-card p {
+      font-size: 14px;
+      color: #99aab5;
+      line-height: 1.5;
+    }
+
+    .feature-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-top: 12px;
+    }
+
+    .tag-ai {
+      background: rgba(240, 178, 50, 0.15);
+      color: #f0b232;
+    }
+
+    .tag-management {
+      background: rgba(88, 101, 242, 0.15);
+      color: #5865f2;
+    }
+
+    .tag-game {
+      background: rgba(87, 242, 135, 0.15);
+      color: #57f287;
+    }
+
+    /* ===== Tech Stack ===== */
+    .tech-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .tech-item {
+      background: #1a1f2e;
+      border: 1px solid #2a2f3e;
+      border-radius: 10px;
+      padding: 16px 24px;
+      text-align: center;
+      transition: all 0.2s ease;
+      min-width: 120px;
+    }
+
+    .tech-item:hover {
+      border-color: #5865f2;
+      transform: translateY(-2px);
+    }
+
+    .tech-item .tech-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-top: 8px;
+    }
+
+    .tech-item .tech-desc {
+      font-size: 12px;
+      color: #72767d;
+      margin-top: 4px;
+    }
+
+    .tech-icon {
+      font-size: 28px;
+    }
+
+    /* ===== Architecture ===== */
+    .arch-box {
+      background: #1a1f2e;
+      border: 1px solid #2a2f3e;
+      border-radius: 14px;
+      padding: 32px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      color: #99aab5;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+
+    .arch-box .highlight { color: #f0b232; }
+    .arch-box .dir { color: #5865f2; }
+    .arch-box .file { color: #57f287; }
+    .arch-box .comment { color: #4a4f5e; }
+
+    /* ===== Commands ===== */
+    .commands-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 12px;
+    }
+
+    .command-item {
+      background: #1a1f2e;
+      border: 1px solid #2a2f3e;
+      border-radius: 10px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .command-name {
+      font-family: 'Courier New', monospace;
+      font-size: 15px;
+      color: #f0b232;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .command-desc {
+      font-size: 13px;
+      color: #99aab5;
+    }
+
+    /* ===== Footer ===== */
+    footer {
+      text-align: center;
+      padding: 40px 20px;
+      border-top: 1px solid #1a1f2e;
+      color: #4a4f5e;
+      font-size: 14px;
+    }
+
+    footer a {
+      color: #5865f2;
+      text-decoration: none;
+    }
+    footer a:hover { text-decoration: underline; }
+
+    /* ===== Divider ===== */
+    .divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #2a2f3e, transparent);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 768px) {
+      section { padding: 60px 16px; }
+      .features-grid { grid-template-columns: 1fr; }
+      .hero-buttons { flex-direction: column; align-items: center; }
+      .btn { width: 100%; max-width: 280px; justify-content: center; }
+      .commands-list { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge">Discord Server Manager + LoL AI Coach</div>
+    <h1>
+      All-in-One<br>
+      <span>Discord Bot</span>
+    </h1>
+    <p class="hero-desc">
+      서버 자동 구성부터 AI 기반 LoL 코칭까지,
+      하나의 봇으로 디스코드 서버를 완벽하게 관리합니다.
+    </p>
+    <div class="hero-buttons">
+      <a href="/" class="btn btn-primary">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        대시보드 바로가기
+      </a>
+      <a href="https://github.com/TASKKILLNAME/discord-server-bot" class="btn btn-secondary" target="_blank">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        GitHub
+      </a>
+    </div>
+    <div class="scroll-hint">&#8964;</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Features -->
+  <section>
+    <div class="section-label">Features</div>
+    <h2 class="section-title">주요 기능</h2>
+    <p class="section-desc">단순한 관리 봇을 넘어, AI 기반 게임 코칭까지 제공하는 올인원 디스코드 봇</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-icon">&#127919;</span>
+        <h3>AI 심층 분석 (/분석)</h3>
+        <p>Match-v5 타임라인에서 사망 위치, 골드차, 오브젝트 참여를 추출하고 AI 코치가 1080px 이미지 리포트로 코칭합니다.</p>
+        <span class="feature-tag tag-ai">AI Coaching</span>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">&#128202;</span>
+        <h3>메타 적응 코칭 (/메타)</h3>
+        <p>최근 50게임을 분석하여 공격성/로밍/시야 등 플레이스타일을 프로파일링하고, 패치 변경사항에 맞는 맞춤 전략을 제공합니다.</p>
+        <span class="feature-tag tag-ai">AI Coaching</span>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">&#9876;&#65039;</span>
+        <h3>실시간 게임 분석 (/전적)</h3>
+        <p>소환사 등록 후 게임 시작 시 자동 감지, 10명 참가자의 티어/챔피언을 AI가 실시간으로 분석합니다.</p>
+        <span class="feature-tag tag-game">Game Analysis</span>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">&#128240;</span>
+        <h3>패치노트 자동 요약</h3>
+        <p>30분 간격으로 새 패치를 감지하고, AI가 챔피언 버프/너프/아이템 변경을 자동 요약하여 채널에 알립니다.</p>
+        <span class="feature-tag tag-ai">AI Summary</span>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">&#128736;&#65039;</span>
+        <h3>서버 자동 구성</h3>
+        <p>게임/스터디/프로젝트/커뮤니티/비즈니스 5가지 템플릿으로 채널, 역할, 권한을 한 번에 자동 생성합니다.</p>
+        <span class="feature-tag tag-management">Management</span>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">&#128200;</span>
+        <h3>레벨 / XP 시스템</h3>
+        <p>메시지 활동 기반 경험치 지급, 레벨업 알림, 서버 순위표(TOP 10)로 커뮤니티 활성화를 돕습니다.</p>
+        <span class="feature-tag tag-game">Gamification</span>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">&#128101;</span>
+        <h3>채널 / 역할 / 멤버 관리</h3>
+        <p>채널 생성/삭제/이동/잠금, 역할 생성/부여/색상 변경, 멤버 킥/밴/타임아웃을 슬래시 명령어로 처리합니다.</p>
+        <span class="feature-tag tag-management">Management</span>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">&#127760;</span>
+        <h3>웹 대시보드</h3>
+        <p>Discord OAuth2 로그인 후 웹 브라우저에서 서버를 관리합니다. 채널/역할/멤버/템플릿을 GUI로 제어합니다.</p>
+        <span class="feature-tag tag-management">Dashboard</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Commands -->
+  <section>
+    <div class="section-label">Commands</div>
+    <h2 class="section-title">슬래시 명령어</h2>
+    <p class="section-desc">총 15개의 슬래시 명령어로 서버의 모든 것을 제어합니다</p>
+
+    <div class="commands-list">
+      <div class="command-item">
+        <span class="command-name">/분석</span>
+        <span class="command-desc">AI 코치 심층 분석 (이미지 리포트)</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/메타</span>
+        <span class="command-desc">50게임 플레이스타일 진단 + 패치 코칭</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/전적</span>
+        <span class="command-desc">롤 계정 등록, 실시간/최근전적 AI 분석</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/패치노트</span>
+        <span class="command-desc">최신 패치노트 AI 요약 + 자동 알림</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/서버구성</span>
+        <span class="command-desc">5가지 템플릿으로 서버 자동 세팅</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/채널</span>
+        <span class="command-desc">생성 / 삭제 / 이동 / 잠금 / 대량생성</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/역할</span>
+        <span class="command-desc">생성 / 삭제 / 부여 / 색상변경 / 전체부여</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/멤버</span>
+        <span class="command-desc">정보 / 킥 / 밴 / 타임아웃 / 닉네임</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/레벨</span>
+        <span class="command-desc">내정보 / 순위 / 유저 정보</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/환영</span>
+        <span class="command-desc">환영 메시지 설정 + 게임 역할 선택</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/서버설정</span>
+        <span class="command-desc">서버 이름 / 인증레벨 / 알림 설정</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/이벤트</span>
+        <span class="command-desc">서버 이벤트 생성 및 참가 관리</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/멤버십</span>
+        <span class="command-desc">AI 크레딧 구매 + 사용 내역</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/tts</span>
+        <span class="command-desc">텍스트를 음성으로 변환</span>
+      </div>
+      <div class="command-item">
+        <span class="command-name">/도움말</span>
+        <span class="command-desc">전체 명령어 안내</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Architecture -->
+  <section>
+    <div class="section-label">Architecture</div>
+    <h2 class="section-title">프로젝트 구조</h2>
+    <p class="section-desc">모듈화된 서비스 레이어와 커맨드 핸들러 패턴</p>
+
+    <div class="arch-box">
+<span class="dir">discord-server-bot/</span>
+├── <span class="dir">src/</span>
+│   ├── <span class="file">index.js</span>              <span class="comment"># Entry Point + Event Handler</span>
+│   ├── <span class="dir">commands/</span>             <span class="comment"># 15개 슬래시 명령어</span>
+│   │   ├── <span class="file">analyze.js</span>        <span class="highlight"># /분석 — AI 코치 심층 분석</span>
+│   │   ├── <span class="file">meta.js</span>           <span class="highlight"># /메타 — 메타 적응 코칭</span>
+│   │   ├── <span class="file">lol.js</span>            <span class="comment"># /전적 — 실시간 + 최근전적</span>
+│   │   └── <span class="comment">... 12개 추가 명령어</span>
+│   ├── <span class="dir">services/</span>             <span class="comment"># 비즈니스 로직</span>
+│   │   ├── <span class="file">riotService.js</span>    <span class="comment"># Riot API (Rate Limit Queue)</span>
+│   │   ├── <span class="file">matchParser.js</span>    <span class="highlight"># 타임라인 의사결정 분해기</span>
+│   │   ├── <span class="file">coachAnalyzer.js</span>  <span class="highlight"># Claude AI 코칭 엔진</span>
+│   │   ├── <span class="file">playstyleProfiler.js</span> <span class="highlight"># 플레이스타일 프로파일링</span>
+│   │   ├── <span class="file">reportRenderer.js</span> <span class="highlight"># Puppeteer 이미지 생성</span>
+│   │   └── <span class="comment">... 6개 추가 서비스</span>
+│   └── <span class="dir">templates/</span>            <span class="comment"># HTML 리포트 템플릿</span>
+├── <span class="dir">dashboard/</span>                <span class="comment"># Express 웹 대시보드</span>
+│   ├── <span class="file">server.js</span>             <span class="comment"># 30+ API 엔드포인트</span>
+│   └── <span class="dir">public/</span>               <span class="comment"># 프론트엔드</span>
+├── <span class="dir">data/</span>                     <span class="comment"># JSON 영속 데이터</span>
+└── <span class="file">Dockerfile</span>               <span class="comment"># Docker 배포 설정</span>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- Tech Stack -->
+  <section style="text-align: center;">
+    <div class="section-label">Tech Stack</div>
+    <h2 class="section-title">기술 스택</h2>
+    <p class="section-desc" style="margin: 0 auto 48px;">검증된 기술들로 구축된 프로덕션 레디 봇</p>
+
+    <div class="tech-grid">
+      <div class="tech-item">
+        <div class="tech-icon">&#9889;</div>
+        <div class="tech-name">Node.js 20</div>
+        <div class="tech-desc">Runtime</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-icon">&#129302;</div>
+        <div class="tech-name">Discord.js 14</div>
+        <div class="tech-desc">Bot Framework</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-icon">&#129504;</div>
+        <div class="tech-name">Claude AI</div>
+        <div class="tech-desc">AI Analysis</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-icon">&#127918;</div>
+        <div class="tech-name">Riot API</div>
+        <div class="tech-desc">Game Data</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-icon">&#128248;</div>
+        <div class="tech-name">Puppeteer</div>
+        <div class="tech-desc">Image Render</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-icon">&#128640;</div>
+        <div class="tech-name">Express</div>
+        <div class="tech-desc">Web Dashboard</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-icon">&#128230;</div>
+        <div class="tech-name">Docker</div>
+        <div class="tech-desc">Deployment</div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-icon">&#9729;&#65039;</div>
+        <div class="tech-name">Railway</div>
+        <div class="tech-desc">Cloud Hosting</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <p>
+      Built with Node.js + Discord.js + Claude AI &nbsp;|&nbsp;
+      <a href="https://github.com/TASKKILLNAME/discord-server-bot" target="_blank">GitHub Repository</a>
+    </p>
+  </footer>
+
+  <!-- Scroll Animation -->
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.feature-card').forEach((card, i) => {
+      card.style.transitionDelay = `${i * 80}ms`;
+      observer.observe(card);
+    });
+  </script>
+
+</body>
+</html>
