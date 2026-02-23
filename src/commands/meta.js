@@ -1,75 +1,64 @@
-const {
-  SlashCommandBuilder,
-  EmbedBuilder,
-} = require('discord.js');
-const fs = require('fs');
-const path = require('path');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const {
   getAccountByRiotId,
   getRecentMatchIds,
   getMatchDetail,
-  getSummonerByPuuid,
   getRankByPuuid,
-  initStaticData,
   formatRank,
 } = require('../services/riotService');
-const { profilePlaystyle } = require('../services/playstyleProfiler');
-const { analyzeMetaImpact, parseCoachingToFields } = require('../services/coachAnalyzer');
-const PATCH_DATA_FILE = path.join(__dirname, '../../data/patch.json');
+const { analyzeChampionPool } = require('../utils/statNormalizer');
+const { getMetaCoaching, parseAnalysisToFields } = require('../services/claudeService');
+const { CHANGES, CURRENT_PATCH } = require('../constants/patchData');
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('메타')
-    .setDescription('최근 50게임 기반 플레이스타일 진단 + 패치 적응 코칭')
+    .setDescription('최근 50판 기반 개인화 메타 코칭')
     .addStringOption((opt) =>
       opt
         .setName('소환사명')
-        .setDescription('게임 이름#태그 (예: Hide on bush#KR1)')
-        .setRequired(true)
+        .setDescription('소환사명#태그 형식 (예: Hide on bush#KR1)')
+        .setRequired(true),
     ),
 
   async execute(interaction) {
-    // 1. 입력 파싱
-    const rawInput = interaction.options.getString('소환사명');
-    const hashIndex = rawInput.lastIndexOf('#');
-
-    if (hashIndex === -1 || hashIndex === 0 || hashIndex === rawInput.length - 1) {
-      return interaction.reply({
-        content: '❌ 올바른 형식으로 입력해주세요: `이름#태그` (예: Hide on bush#KR1)',
-        ephemeral: true,
-      });
-    }
-
-    const gameName = rawInput.substring(0, hashIndex).trim();
-    const tagLine = rawInput.substring(hashIndex + 1).trim();
-
-    // 2. deferReply
     await interaction.deferReply();
 
     try {
+      const input = interaction.options.getString('소환사명');
+      const hashIndex = input.lastIndexOf('#');
+
+      if (hashIndex === -1 || hashIndex === 0 || hashIndex === input.length - 1) {
+        return interaction.editReply({
+          content: '❌ 소환사명#태그 형식으로 입력해주세요 (예: Hide on bush#KR1)',
+        });
+      }
+
+      const gameName = input.substring(0, hashIndex).trim();
+      const tagLine = input.substring(hashIndex + 1).trim();
+
       // 로딩 메시지
-      const loadingEmbed = new EmbedBuilder()
-        .setTitle('📊 메타 분석 중...')
-        .setDescription(
-          `**${gameName}#${tagLine}** 최근 50게임을 분석합니다.\n` +
-            '50게임 수집 → 플레이스타일 프로파일링 → 패치 분석 → AI 코칭\n' +
-            '잠시만 기다려주세요... (약 30~90초)'
-        )
-        .setColor(0xf0b232);
-      await interaction.editReply({ embeds: [loadingEmbed] });
+      await interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('📊 메타 분석 중...')
+            .setDescription(
+              `**${gameName}#${tagLine}** 최근 50게임 분석 중\n` +
+                '데이터 수집 → 챔피언 풀 분석 → 티어 보정 → AI 코칭\n' +
+                '잠시만 기다려주세요... (약 30~90초)',
+            )
+            .setColor(0xf0b232),
+        ],
+      });
 
-      // 4. 정적 데이터 초기화
-      await initStaticData();
-
-      // 5. 계정 조회
+      // 1. 소환사 정보 조회
       const account = await getAccountByRiotId(gameName, tagLine);
-
-      // 6. 소환사 정보 + 랭크
-      const summoner = await getSummonerByPuuid(account.puuid);
       const rankData = await getRankByPuuid(account.puuid);
-      const rank = formatRank(rankData);
+      const soloRank = rankData.find((r) => r.queueType === 'RANKED_SOLO_5x5');
+      const tier = soloRank?.tier?.toLowerCase() || 'gold';
+      const rankStr = formatRank(rankData);
 
-      // 7. 최근 50게임 매치 ID
+      // 2. 최근 50판 수집
       const matchIds = await getRecentMatchIds(account.puuid, 50);
 
       if (matchIds.length === 0) {
@@ -90,24 +79,60 @@ module.exports = {
             .setTitle('📊 매치 데이터 수집 중...')
             .setDescription(
               `${matchIds.length}개 게임의 상세 데이터를 수집합니다.\n` +
-                'Riot API 속도 제한으로 시간이 소요될 수 있습니다...'
+                'Riot API 속도 제한으로 시간이 소요될 수 있습니다...',
             )
             .setColor(0xffa500),
         ],
       });
 
-      // 8. 매치 상세 일괄 조회 (순차적 — 레이트 리밋 큐가 처리)
-      const matchDetails = [];
+      // 3. 챔피언별 집계
+      const champStats = {};
+      let totalGames = 0;
+      let totalWins = 0;
+      let totalKills = 0;
+      let totalDeaths = 0;
+      let totalAssists = 0;
+
       for (const matchId of matchIds) {
         try {
           const detail = await getMatchDetail(matchId);
-          if (detail) matchDetails.push(detail);
+          if (!detail) continue;
+
+          const p = detail.info.participants.find((x) => x.puuid === account.puuid);
+          if (!p) continue;
+
+          totalGames++;
+          if (p.win) totalWins++;
+          totalKills += p.kills;
+          totalDeaths += p.deaths;
+          totalAssists += p.assists;
+
+          const name = p.championName;
+          if (!champStats[name]) {
+            champStats[name] = {
+              games: 0,
+              wins: 0,
+              kills: 0,
+              deaths: 0,
+              assists: 0,
+              cs: 0,
+              duration: 0,
+            };
+          }
+          const s = champStats[name];
+          s.games++;
+          if (p.win) s.wins++;
+          s.kills += p.kills;
+          s.deaths += p.deaths;
+          s.assists += p.assists;
+          s.cs += p.totalMinionsKilled + p.neutralMinionsKilled;
+          s.duration += detail.info.gameDuration / 60;
         } catch (err) {
           console.error(`매치 조회 실패 (${matchId}):`, err.message);
         }
       }
 
-      if (matchDetails.length === 0) {
+      if (totalGames === 0) {
         return interaction.editReply({
           embeds: [
             new EmbedBuilder()
@@ -118,102 +143,83 @@ module.exports = {
         });
       }
 
-      // 9. 플레이스타일 프로파일링
-      const playstyleProfile = profilePlaystyle(
-        matchDetails,
-        account.puuid,
-        rank,
-        `${account.gameName}#${account.tagLine}`
-      );
+      // 4. 모스트 3 추출
+      const top3 = Object.entries(champStats)
+        .sort((a, b) => b[1].games - a[1].games)
+        .slice(0, 3)
+        .map(([name, s]) => ({
+          name,
+          games: s.games,
+          winrate: s.wins / s.games,
+          avg_kda: (s.kills + s.assists) / Math.max(s.deaths, 1),
+          avg_cs: s.cs / s.duration,
+        }));
 
-      // 10. 패치 데이터 로드
-      let patchData = { champions: [], items: [], systemChanges: [] };
-      try {
-        if (fs.existsSync(PATCH_DATA_FILE)) {
-          patchData = JSON.parse(fs.readFileSync(PATCH_DATA_FILE, 'utf-8'));
-        }
-      } catch (err) {
-        console.error('patch.json 로드 실패:', err.message);
-      }
+      // 5. 플레이 성향 계산
+      const playStyle = {
+        top_champions: top3,
+        analyzed_games: totalGames,
+      };
 
-      // 11. AI 메타 분석
-      const metaAnalysis = await analyzeMetaImpact(playstyleProfile, patchData);
-      const analysisFields = parseCoachingToFields(metaAnalysis);
+      // 6. 모스트 챔피언 관련 패치 변경사항만 필터
+      const topChampNames = top3.map((c) => c.name);
+      const filteredChanges = CHANGES.filter((c) => topChampNames.includes(c.champion));
 
-      // 12. 결과 전송
+      // 7. 티어 보정 적용
+      const normalizedPool = analyzeChampionPool(top3, tier);
+      playStyle.top_champions = normalizedPool;
+
+      // 8. AI 메타 코칭
+      const coachingText = await getMetaCoaching(playStyle, filteredChanges, tier);
+      const analysisFields = parseAnalysisToFields(coachingText);
+
+      // 9. 종합 KDA
+      const avgKDA =
+        totalDeaths === 0
+          ? 'Perfect'
+          : ((totalKills + totalAssists) / totalDeaths).toFixed(2);
+      const winRate = Math.round((totalWins / totalGames) * 100);
+
+      // 10. 결과 전송
       // 프로필 Embed
       const profileEmbed = new EmbedBuilder()
         .setTitle(`📊 ${gameName}#${tagLine} — 메타 코칭`)
         .addFields(
-          { name: '🏆 랭크', value: rank, inline: true },
+          { name: '🏆 랭크', value: rankStr, inline: true },
           {
             name: '📈 최근 전적',
-            value: `${playstyleProfile.totalGames}게임 | ${playstyleProfile.winRate}% 승률`,
+            value: `${totalGames}게임 | ${winRate}% 승률`,
             inline: true,
           },
-          { name: '📊 평균 KDA', value: playstyleProfile.avgKDA, inline: true }
+          { name: '📊 평균 KDA', value: String(avgKDA), inline: true },
         )
         .setColor(0x5865f2)
         .setTimestamp();
-
-      // 플레이스타일 Embed
-      const styleEmbed = new EmbedBuilder()
-        .setTitle('🎮 플레이스타일 프로필')
-        .addFields(
-          {
-            name: '⚔️ 공격성',
-            value: `${'█'.repeat(playstyleProfile.aggression)}${'░'.repeat(10 - playstyleProfile.aggression)} ${playstyleProfile.aggression}/10`,
-            inline: true,
-          },
-          {
-            name: '🗺️ 로밍',
-            value: `${'█'.repeat(playstyleProfile.roaming)}${'░'.repeat(10 - playstyleProfile.roaming)} ${playstyleProfile.roaming}/10`,
-            inline: true,
-          },
-          {
-            name: '👁️ 시야',
-            value: `${'█'.repeat(playstyleProfile.visionScore)}${'░'.repeat(10 - playstyleProfile.visionScore)} ${playstyleProfile.visionScore}/10`,
-            inline: true,
-          },
-          {
-            name: '🌾 CS',
-            value: `${'█'.repeat(playstyleProfile.csSkill)}${'░'.repeat(10 - playstyleProfile.csSkill)} ${playstyleProfile.csSkill}/10`,
-            inline: true,
-          },
-          {
-            name: '🏰 후반',
-            value: `${'█'.repeat(playstyleProfile.lateGameSkill)}${'░'.repeat(10 - playstyleProfile.lateGameSkill)} ${playstyleProfile.lateGameSkill}/10`,
-            inline: true,
-          },
-          { name: '\u200b', value: '\u200b', inline: true } // 정렬용 빈 필드
-        )
-        .setColor(0xf0b232);
 
       // 챔피언 풀 Embed
       const champEmbed = new EmbedBuilder()
         .setTitle('🏆 주력 챔피언 TOP 3')
         .setColor(0x1a78ae);
 
-      if (playstyleProfile.championPool.length > 0) {
-        const champDesc = playstyleProfile.championPool
-          .map(
-            (c, i) =>
-              `**${i + 1}. ${c.champion}** — ${c.games}판 ${c.winRate}% 승률 | KDA ${c.avgKDA} | CS ${c.avgCs}/분`
-          )
+      if (normalizedPool.length > 0) {
+        const champDesc = normalizedPool
+          .map((c, i) => {
+            const wr = Math.round(c.winrate * 100);
+            const csLabel =
+              c.flags.is_roam ? `CS ${c.avg_cs.toFixed(1)}/분 (로밍형)` : `CS ${c.avg_cs.toFixed(1)}/분`;
+            const kdaLabel =
+              c.flags.is_dive ? `KDA ${c.avg_kda.toFixed(2)} (다이브형)` : `KDA ${c.avg_kda.toFixed(2)}`;
+            const csTag =
+              c.cs_vs_avg >= 1 ? ' ✅' : c.cs_vs_avg <= -1 ? ' ⚠️' : '';
+            const kdaTag =
+              c.kda_vs_avg >= 1 ? ' ✅' : c.kda_vs_avg <= -1 ? ' ⚠️' : '';
+
+            return `**${i + 1}. ${c.name}** — ${c.games}판 ${wr}% 승률\n${kdaLabel}${kdaTag} | ${csLabel}${csTag}`;
+          })
           .join('\n\n');
         champEmbed.setDescription(champDesc);
       } else {
         champEmbed.setDescription('충분한 데이터가 없습니다.');
-      }
-
-      // 포지션 분포
-      const roleStr = Object.entries(playstyleProfile.roleDistribution)
-        .filter(([, v]) => v > 0)
-        .sort(([, a], [, b]) => b - a)
-        .map(([role, pct]) => `${translateRole(role)}: ${pct}%`)
-        .join(' | ');
-      if (roleStr) {
-        champEmbed.addFields({ name: '📍 포지션 분포', value: roleStr });
       }
 
       // AI 분석 Embed
@@ -221,7 +227,7 @@ module.exports = {
         .setTitle('🤖 AI 메타 코칭')
         .setColor(0xf0b232)
         .setFooter({
-          text: `AI 코치 분석 | 패치: ${patchData.version || '데이터 없음'} | 실제 결과와 다를 수 있습니다`,
+          text: `패치 ${CURRENT_PATCH} | AI 분석은 참고용입니다`,
         })
         .setTimestamp();
 
@@ -230,20 +236,15 @@ module.exports = {
       }
 
       await interaction.editReply({
-        embeds: [profileEmbed, styleEmbed, champEmbed, analysisEmbed],
+        embeds: [profileEmbed, champEmbed, analysisEmbed],
       });
     } catch (err) {
       console.error('메타 분석 오류:', err);
-      const errorDetail = err.userMessage || err.message || '알 수 없는 오류';
-      const statusCode = err.response?.status ? ` (HTTP ${err.response.status})` : '';
-      await interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 오류 발생')
-            .setDescription(`${errorDetail}${statusCode}`)
-            .setColor(0xff0000),
-        ],
-      });
+      const msg =
+        err.response?.status === 404
+          ? '❌ 소환사를 찾을 수 없습니다'
+          : `❌ 분석 중 오류가 발생했습니다: ${err.userMessage || err.message || '알 수 없는 오류'}`;
+      await interaction.editReply(msg);
     }
   },
 };

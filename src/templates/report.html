@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1080px;
+    min-height: 1080px;
+    background: #0a0e1a;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+    padding-bottom: 24px;
+    border-bottom: 2px solid {{RESULT_COLOR}};
+  }
+
+  .header-left h1 {
+    font-size: 36px;
+    font-weight: 800;
+    color: #ffffff;
+    margin-bottom: 4px;
+  }
+
+  .header-left .sub {
+    font-size: 16px;
+    color: #8b95a5;
+  }
+
+  .result-badge {
+    font-size: 28px;
+    font-weight: 800;
+    padding: 12px 32px;
+    border-radius: 12px;
+    color: #ffffff;
+    background: {{RESULT_COLOR}};
+  }
+
+  .stats-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .stat-card {
+    flex: 1;
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+  }
+
+  .stat-card .label {
+    font-size: 13px;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+
+  .stat-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    color: #ffffff;
+  }
+
+  .analysis {
+    background: #111827;
+    border: 1px solid #1f2937;
+    border-radius: 12px;
+    padding: 28px;
+    flex: 1;
+    margin-bottom: 24px;
+    font-size: 15px;
+    line-height: 1.7;
+    color: #d1d5db;
+  }
+
+  .analysis .section-header {
+    font-size: 17px;
+    font-weight: 700;
+    color: {{RESULT_COLOR}};
+    margin-top: 16px;
+    margin-bottom: 8px;
+    padding-left: 12px;
+    border-left: 3px solid {{RESULT_COLOR}};
+  }
+
+  .analysis .section-header:first-child {
+    margin-top: 0;
+  }
+
+  .analysis strong {
+    color: #ffffff;
+  }
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 16px;
+    border-top: 1px solid #1f2937;
+    font-size: 13px;
+    color: #4b5563;
+  }
+</style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <h1>{{SUMMONER}}</h1>
+      <span class="sub">{{CHAMPION}} · {{TIER}}</span>
+    </div>
+    <div class="result-badge">{{RESULT}}</div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="label">KDA</div>
+      <div class="value">{{KDA}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">CS/분</div>
+      <div class="value">{{CS}}</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">패치</div>
+      <div class="value">{{PATCH}}</div>
+    </div>
+  </div>
+
+  <div class="analysis">
+    {{ANALYSIS}}
+  </div>
+
+  <div class="footer">
+    <span>AI Coach Analysis</span>
+    <span>AI 분석은 참고용입니다 · 실제 결과와 다를 수 있습니다</span>
+  </div>
+
+</body>
+</html>

@@ -8,62 +8,74 @@ const {
   getRecentMatchIds,
   getMatchDetail,
   getMatchTimeline,
-  initStaticData,
-  formatRank,
   getRankByPuuid,
+  formatRank,
 } = require('../services/riotService');
-const { parseMatchTimeline } = require('../services/matchParser');
-const { analyzeDecisions, parseCoachingToFields } = require('../services/coachAnalyzer');
-const { renderAnalysisReport } = require('../services/reportRenderer');
+const { parseMatch } = require('../utils/matchParser');
+const { getMatchAnalysis, parseAnalysisToFields } = require('../services/claudeService');
+const { generateReportImage } = require('../services/imageService');
+const { CURRENT_PATCH } = require('../constants/patchData');
+const fs = require('fs');
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('분석')
-    .setDescription('최근 게임의 의사결정을 AI 코치가 심층 분석합니다 (이미지 리포트)')
+    .setDescription('최근 게임을 AI가 분석합니다')
     .addStringOption((opt) =>
       opt
         .setName('소환사명')
-        .setDescription('게임 이름#태그 (예: Hide on bush#KR1)')
-        .setRequired(true)
+        .setDescription('소환사명#태그 형식 (예: Hide on bush#KR1)')
+        .setRequired(true),
+    )
+    .addIntegerOption((opt) =>
+      opt
+        .setName('게임수')
+        .setDescription('분석할 게임 수 (기본: 1, 최대: 3)')
+        .setMinValue(1)
+        .setMaxValue(3)
+        .setRequired(false),
     ),
 
   async execute(interaction) {
-    // 1. 입력 파싱
-    const rawInput = interaction.options.getString('소환사명');
-    const hashIndex = rawInput.lastIndexOf('#');
-
-    if (hashIndex === -1 || hashIndex === 0 || hashIndex === rawInput.length - 1) {
-      return interaction.reply({
-        content: '❌ 올바른 형식으로 입력해주세요: `이름#태그` (예: Hide on bush#KR1)',
-        ephemeral: true,
-      });
-    }
-
-    const gameName = rawInput.substring(0, hashIndex).trim();
-    const tagLine = rawInput.substring(hashIndex + 1).trim();
-
-    // 2. deferReply
     await interaction.deferReply();
 
     try {
+      const input = interaction.options.getString('소환사명');
+      const count = interaction.options.getInteger('게임수') || 1;
+      const hashIndex = input.lastIndexOf('#');
+
+      if (hashIndex === -1 || hashIndex === 0 || hashIndex === input.length - 1) {
+        return interaction.editReply({
+          content: '❌ 소환사명#태그 형식으로 입력해주세요 (예: Hide on bush#KR1)',
+        });
+      }
+
+      const gameName = input.substring(0, hashIndex).trim();
+      const tagLine = input.substring(hashIndex + 1).trim();
+
       // 로딩 메시지
-      const loadingEmbed = new EmbedBuilder()
-        .setTitle('🧠 AI 코치 분석 중...')
-        .setDescription(
-          `**${gameName}#${tagLine}** 최근 게임의 의사결정을 분석합니다.\n` +
-            '타임라인 데이터 수집 → 의사결정 분해 → AI 코칭 → 이미지 생성\n' +
-            '잠시만 기다려주세요... (약 20~50초)'
-        )
-        .setColor(0xf0b232);
-      await interaction.editReply({ embeds: [loadingEmbed] });
+      await interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🧠 AI 코치 분석 중...')
+            .setDescription(
+              `**${gameName}#${tagLine}** 최근 ${count}게임 분석 중\n` +
+                '데이터 수집 → 티어 보정 → AI 코칭 → 이미지 생성\n' +
+                '잠시만 기다려주세요... (약 20~50초)',
+            )
+            .setColor(0xf0b232),
+        ],
+      });
 
-      // 4. 정적 데이터 초기화
-      await initStaticData();
-
-      // 5. 계정 조회
+      // 1. 소환사 정보 조회
       const account = await getAccountByRiotId(gameName, tagLine);
+      const rankData = await getRankByPuuid(account.puuid);
+      const soloRank = rankData.find((r) => r.queueType === 'RANKED_SOLO_5x5');
+      const tier = soloRank?.tier?.toLowerCase() || 'gold';
+      const rankStr = formatRank(rankData);
 
-      // 6. 최근 매치 ID 조회 (1게임)
-      const matchIds = await getRecentMatchIds(account.puuid, 1);
+      // 2. 최근 게임 가져오기
+      const matchIds = await getRecentMatchIds(account.puuid, count);
 
       if (matchIds.length === 0) {
         return interaction.editReply({
@@ -76,133 +88,100 @@ module.exports = {
         });
       }
 
-      // 7. 매치 디테일 + 타임라인 병렬 호출
-      const [matchDetail, timeline] = await Promise.all([
+      // 3. 매치 디테일 + 타임라인 병렬 호출
+      const [detail, timeline] = await Promise.all([
         getMatchDetail(matchIds[0]),
         getMatchTimeline(matchIds[0]),
       ]);
 
-      if (!matchDetail || !timeline) {
+      if (!detail || !timeline) {
         return interaction.editReply({
           embeds: [
             new EmbedBuilder()
               .setTitle('❌ 데이터 조회 실패')
-              .setDescription(
-                '매치 데이터 또는 타임라인을 가져올 수 없습니다.\n' +
-                  '일부 게임 모드(ARAM, 사용자 설정 등)는 타임라인을 지원하지 않을 수 있습니다.'
-              )
+              .setDescription('매치 데이터 또는 타임라인을 가져올 수 없습니다.')
               .setColor(0xff0000),
           ],
         });
       }
 
-      // 8. participantId 찾기
-      const participant = matchDetail.info.participants.find(
-        (p) => p.puuid === account.puuid
-      );
+      // 4. 매치 파싱 (티어 보정 + 챔피언 플래그 적용)
+      const parsed = parseMatch(detail, timeline, account.puuid, tier);
 
-      if (!participant) {
-        return interaction.editReply({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('❌ 참가자 데이터 없음')
-              .setDescription('매치에서 해당 플레이어를 찾을 수 없습니다.')
-              .setColor(0xff0000),
-          ],
-        });
-      }
+      // 5. AI 코칭 분석
+      const analysisText = await getMatchAnalysis(parsed, tier);
 
-      // 9. 랭크 조회
-      const rankData = await getRankByPuuid(account.puuid);
-      const rank = formatRank(rankData);
-
-      // 10. 타임라인 파싱
-      const decisionData = parseMatchTimeline(
-        timeline,
-        matchDetail,
-        participant.participantId
-      );
-      decisionData.playerInfo.rank = rank;
-
-      // 11. AI 코칭 분석
-      const coachFeedback = await analyzeDecisions(decisionData);
-
-      // 12. 이미지 렌더링
-      let imageBuffer;
+      // 6. 이미지 생성
+      let imagePath;
       try {
-        imageBuffer = await renderAnalysisReport(decisionData, coachFeedback, {
-          gameName: account.gameName,
-          tagLine: account.tagLine,
-          rank,
-          champion: decisionData.playerInfo.champion,
-          win: decisionData.playerInfo.win,
+        imagePath = await generateReportImage(analysisText, {
+          summoner: gameName,
+          champion: parsed.champion,
+          tier,
+          team_result: parsed.team_result,
+          raw: parsed.raw,
+          kills: parsed.kills,
+          deaths: parsed.deaths,
+          assists: parsed.assists,
+          patch: CURRENT_PATCH,
         });
       } catch (renderErr) {
         console.error('이미지 렌더링 실패, 텍스트 폴백:', renderErr.message);
-        // 이미지 실패 시 텍스트 Embed 폴백
-        imageBuffer = null;
+        imagePath = null;
       }
 
-      // 13. 결과 전송
-      if (imageBuffer) {
-        const attachment = new AttachmentBuilder(imageBuffer, {
-          name: 'analysis-report.png',
-        });
+      // 7. Discord 전송
+      const tierDisplay = soloRank
+        ? `${soloRank.tier} ${soloRank.rank} ${soloRank.leaguePoints}LP`
+        : '언랭';
 
-        const resultEmbed = new EmbedBuilder()
-          .setTitle(`🧠 AI 코치 분석 — ${gameName}#${tagLine}`)
-          .setDescription(
-            `**${decisionData.playerInfo.champion}** (${decisionData.playerInfo.win ? '✅ 승리' : '❌ 패배'}) | ` +
-              `${decisionData.playerInfo.kills}/${decisionData.playerInfo.deaths}/${decisionData.playerInfo.assists} | ` +
-              `${rank}`
+      if (imagePath) {
+        const attachment = new AttachmentBuilder(imagePath, { name: 'analysis.png' });
+        const embed = new EmbedBuilder()
+          .setColor(parsed.team_result === 'WIN' ? 0x2ecc71 : 0xe74c3c)
+          .setTitle(`🧠 ${gameName} | ${parsed.champion} | ${parsed.team_result}`)
+          .setDescription('AI 분석 결과를 이미지로 확인하세요')
+          .addFields(
+            { name: '티어', value: tierDisplay, inline: true },
+            { name: 'KDA', value: parsed.raw.kda.toFixed(2), inline: true },
+            { name: 'CS/분', value: parsed.raw.cs_per_min.toFixed(1), inline: true },
           )
-          .setImage('attachment://analysis-report.png')
-          .setColor(decisionData.playerInfo.win ? 0x57f287 : 0xed4245)
-          .setFooter({ text: 'AI 코치 분석 | 실제 결과와 다를 수 있습니다' })
+          .setImage('attachment://analysis.png')
+          .setFooter({ text: `패치 ${CURRENT_PATCH} | AI 분석은 참고용입니다` })
           .setTimestamp();
 
-        await interaction.editReply({
-          embeds: [resultEmbed],
-          files: [attachment],
-        });
+        await interaction.editReply({ embeds: [embed], files: [attachment] });
+
+        // 임시 파일 정리
+        try {
+          fs.unlinkSync(imagePath);
+        } catch (_) {
+          /* ignore */
+        }
       } else {
         // 텍스트 폴백
-        const fields = parseCoachingToFields(coachFeedback);
+        const fields = parseAnalysisToFields(analysisText);
 
-        const resultEmbed = new EmbedBuilder()
-          .setTitle(`🧠 AI 코치 분석 — ${gameName}#${tagLine}`)
-          .setDescription(
-            `**${decisionData.playerInfo.champion}** (${decisionData.playerInfo.win ? '✅ 승리' : '❌ 패배'}) | ` +
-              `${decisionData.playerInfo.kills}/${decisionData.playerInfo.deaths}/${decisionData.playerInfo.assists} | ` +
-              `${rank}`
-          )
-          .setColor(decisionData.playerInfo.win ? 0x57f287 : 0xed4245)
-          .setTimestamp();
-
-        const analysisEmbed = new EmbedBuilder()
-          .setTitle('🤖 AI 코치 피드백')
-          .setColor(0xf0b232)
-          .setFooter({ text: 'AI 코치 분석 | 이미지 생성 실패로 텍스트 표시' })
+        const embed = new EmbedBuilder()
+          .setColor(parsed.team_result === 'WIN' ? 0x2ecc71 : 0xe74c3c)
+          .setTitle(`🧠 ${gameName} | ${parsed.champion} | ${parsed.team_result}`)
+          .setDescription(`${tierDisplay} | KDA ${parsed.raw.kda.toFixed(2)} | CS ${parsed.raw.cs_per_min.toFixed(1)}/분`)
+          .setFooter({ text: `패치 ${CURRENT_PATCH} | AI 분석은 참고용입니다` })
           .setTimestamp();
 
         for (const f of fields.slice(0, 25)) {
-          analysisEmbed.addFields(f);
+          embed.addFields(f);
         }
 
-        await interaction.editReply({ embeds: [resultEmbed, analysisEmbed] });
+        await interaction.editReply({ embeds: [embed] });
       }
     } catch (err) {
       console.error('분석 명령어 오류:', err);
-      const errorDetail = err.userMessage || err.message || '알 수 없는 오류';
-      const statusCode = err.response?.status ? ` (HTTP ${err.response.status})` : '';
-      await interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 오류 발생')
-            .setDescription(`${errorDetail}${statusCode}`)
-            .setColor(0xff0000),
-        ],
-      });
+      const msg =
+        err.response?.status === 404
+          ? '❌ 소환사를 찾을 수 없습니다'
+          : `❌ 분석 중 오류가 발생했습니다: ${err.userMessage || err.message || '알 수 없는 오류'}`;
+      await interaction.editReply(msg);
     }
   },
 };
