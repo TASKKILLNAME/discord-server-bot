@@ -88,92 +88,143 @@ module.exports = {
         });
       }
 
-      // 3. 매치 디테일 + 타임라인 병렬 호출
-      const [detail, timeline] = await Promise.all([
-        getMatchDetail(matchIds[0]),
-        getMatchTimeline(matchIds[0]),
-      ]);
+      // 3. 각 매치를 순회하며 분석
+      const results = [];
+      const totalCount = matchIds.length;
 
-      if (!detail || !timeline) {
+      for (let i = 0; i < matchIds.length; i++) {
+        const matchId = matchIds[i];
+
+        try {
+          // 진행 상태 업데이트 (2게임 이상일 때)
+          if (totalCount > 1) {
+            await interaction.editReply({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle('🧠 AI 코치 분석 중...')
+                  .setDescription(
+                    `**${gameName}#${tagLine}** [${i + 1}/${totalCount}] 게임 분석 중\n` +
+                      '데이터 수집 → 티어 보정 → AI 코칭 → 이미지 생성\n' +
+                      '잠시만 기다려주세요...',
+                  )
+                  .setColor(0xf0b232),
+              ],
+            });
+          }
+
+          // 매치 디테일 + 타임라인 병렬 호출
+          const [detail, timeline] = await Promise.all([
+            getMatchDetail(matchId),
+            getMatchTimeline(matchId),
+          ]);
+
+          if (!detail || !timeline) {
+            console.error(`매치 데이터 조회 실패 (${matchId})`);
+            continue;
+          }
+
+          // 매치 파싱 (티어 보정 + 챔피언 플래그 적용)
+          const parsed = parseMatch(detail, timeline, account.puuid, tier);
+
+          // AI 코칭 분석
+          const analysisText = await getMatchAnalysis(parsed, tier);
+
+          // 이미지 생성
+          let imagePath = null;
+          try {
+            imagePath = await generateReportImage(analysisText, {
+              summoner: gameName,
+              champion: parsed.champion,
+              tier,
+              team_result: parsed.team_result,
+              raw: parsed.raw,
+              kills: parsed.kills,
+              deaths: parsed.deaths,
+              assists: parsed.assists,
+              patch: CURRENT_PATCH,
+            });
+          } catch (renderErr) {
+            console.error(`이미지 렌더링 실패 (${i + 1}번째 게임), 텍스트 폴백:`, renderErr.message);
+          }
+
+          results.push({ parsed, analysisText, imagePath, index: i });
+        } catch (err) {
+          console.error(`매치 분석 실패 (${matchId}):`, err.message);
+        }
+      }
+
+      // 분석 결과가 하나도 없는 경우
+      if (results.length === 0) {
         return interaction.editReply({
           embeds: [
             new EmbedBuilder()
               .setTitle('❌ 데이터 조회 실패')
-              .setDescription('매치 데이터 또는 타임라인을 가져올 수 없습니다.')
+              .setDescription('매치 데이터를 분석할 수 없습니다.')
               .setColor(0xff0000),
           ],
         });
       }
 
-      // 4. 매치 파싱 (티어 보정 + 챔피언 플래그 적용)
-      const parsed = parseMatch(detail, timeline, account.puuid, tier);
-
-      // 5. AI 코칭 분석
-      const analysisText = await getMatchAnalysis(parsed, tier);
-
-      // 6. 이미지 생성
-      let imagePath;
-      try {
-        imagePath = await generateReportImage(analysisText, {
-          summoner: gameName,
-          champion: parsed.champion,
-          tier,
-          team_result: parsed.team_result,
-          raw: parsed.raw,
-          kills: parsed.kills,
-          deaths: parsed.deaths,
-          assists: parsed.assists,
-          patch: CURRENT_PATCH,
-        });
-      } catch (renderErr) {
-        console.error('이미지 렌더링 실패, 텍스트 폴백:', renderErr.message);
-        imagePath = null;
-      }
-
-      // 7. Discord 전송
+      // 4. Discord 전송
       const tierDisplay = soloRank
         ? `${soloRank.tier} ${soloRank.rank} ${soloRank.leaguePoints}LP`
         : '언랭';
 
-      if (imagePath) {
-        const attachment = new AttachmentBuilder(imagePath, { name: 'analysis.png' });
-        const embed = new EmbedBuilder()
-          .setColor(parsed.team_result === 'WIN' ? 0x2ecc71 : 0xe74c3c)
-          .setTitle(`🧠 ${gameName} | ${parsed.champion} | ${parsed.team_result}`)
-          .setDescription('AI 분석 결과를 이미지로 확인하세요')
-          .addFields(
-            { name: '티어', value: tierDisplay, inline: true },
-            { name: 'KDA', value: parsed.raw.kda.toFixed(2), inline: true },
-            { name: 'CS/분', value: parsed.raw.cs_per_min.toFixed(1), inline: true },
-          )
-          .setImage('attachment://analysis.png')
-          .setFooter({ text: `패치 ${CURRENT_PATCH} | AI 분석은 참고용입니다` })
-          .setTimestamp();
+      const embeds = [];
+      const files = [];
+      const imagePaths = [];
 
-        await interaction.editReply({ embeds: [embed], files: [attachment] });
+      for (let i = 0; i < results.length; i++) {
+        const { parsed, analysisText, imagePath } = results[i];
+        const gameLabel = results.length > 1 ? `[${i + 1}/${results.length}] ` : '';
 
-        // 임시 파일 정리
+        if (imagePath) {
+          const fileName = `analysis_${i + 1}.png`;
+          files.push(new AttachmentBuilder(imagePath, { name: fileName }));
+          imagePaths.push(imagePath);
+
+          const embed = new EmbedBuilder()
+            .setColor(parsed.team_result === 'WIN' ? 0x2ecc71 : 0xe74c3c)
+            .setTitle(`🧠 ${gameLabel}${gameName} | ${parsed.champion} | ${parsed.team_result}`)
+            .setDescription('AI 분석 결과를 이미지로 확인하세요')
+            .addFields(
+              { name: '티어', value: tierDisplay, inline: true },
+              { name: 'KDA', value: parsed.raw.kda.toFixed(2), inline: true },
+              { name: 'CS/분', value: parsed.raw.cs_per_min.toFixed(1), inline: true },
+            )
+            .setImage(`attachment://${fileName}`)
+            .setFooter({ text: `패치 ${CURRENT_PATCH} | AI 분석은 참고용입니다` })
+            .setTimestamp();
+
+          embeds.push(embed);
+        } else {
+          // 텍스트 폴백
+          const fields = parseAnalysisToFields(analysisText);
+
+          const embed = new EmbedBuilder()
+            .setColor(parsed.team_result === 'WIN' ? 0x2ecc71 : 0xe74c3c)
+            .setTitle(`🧠 ${gameLabel}${gameName} | ${parsed.champion} | ${parsed.team_result}`)
+            .setDescription(`${tierDisplay} | KDA ${parsed.raw.kda.toFixed(2)} | CS ${parsed.raw.cs_per_min.toFixed(1)}/분`)
+            .setFooter({ text: `패치 ${CURRENT_PATCH} | AI 분석은 참고용입니다` })
+            .setTimestamp();
+
+          for (const f of fields.slice(0, 25)) {
+            embed.addFields(f);
+          }
+
+          embeds.push(embed);
+        }
+      }
+
+      await interaction.editReply({ embeds, files });
+
+      // 임시 파일 정리
+      for (const p of imagePaths) {
         try {
-          fs.unlinkSync(imagePath);
+          fs.unlinkSync(p);
         } catch (_) {
           /* ignore */
         }
-      } else {
-        // 텍스트 폴백
-        const fields = parseAnalysisToFields(analysisText);
-
-        const embed = new EmbedBuilder()
-          .setColor(parsed.team_result === 'WIN' ? 0x2ecc71 : 0xe74c3c)
-          .setTitle(`🧠 ${gameName} | ${parsed.champion} | ${parsed.team_result}`)
-          .setDescription(`${tierDisplay} | KDA ${parsed.raw.kda.toFixed(2)} | CS ${parsed.raw.cs_per_min.toFixed(1)}/분`)
-          .setFooter({ text: `패치 ${CURRENT_PATCH} | AI 분석은 참고용입니다` })
-          .setTimestamp();
-
-        for (const f of fields.slice(0, 25)) {
-          embed.addFields(f);
-        }
-
-        await interaction.editReply({ embeds: [embed] });
       }
     } catch (err) {
       console.error('분석 명령어 오류:', err);
