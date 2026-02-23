@@ -18,7 +18,7 @@ function getClient() {
   return client;
 }
 
-const MODEL = 'claude-sonnet-4-6-20260217';
+const MODEL = 'claude-sonnet-4-20250514';
 
 // 사후 검증: 고elo 유저에게 부적절한 조언 감지
 function validateResponse(text, tier) {

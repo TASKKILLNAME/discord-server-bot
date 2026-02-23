@@ -54,7 +54,8 @@ function parseMatch(matchDetail, timeline, puuid, tier) {
   };
 
   const champion = participant.championName;
-  const normalized = normalizeStats(rawStats, tier, champion);
+  const role = participant.teamPosition || 'MIDDLE';
+  const normalized = normalizeStats(rawStats, tier, champion, role);
   const participantId = getParticipantId(matchDetail, puuid);
   const deathPattern = analyzeDeathEvents(timeline, participantId);
 

@@ -4,16 +4,17 @@
 // 반환: -2(매우낮음) ~ +2(매우높음)
 // ============================================
 
-const { TIER_EXPECTATIONS } = require('../constants/tierExpectations');
+const { TIER_EXPECTATIONS, ROLE_CS_MODIFIER } = require('../constants/tierExpectations');
 const { CHAMPION_FLAGS } = require('../constants/championFlags');
 
-function normalizeStats(rawStats, tier, champion) {
+function normalizeStats(rawStats, tier, champion, role) {
   const tierAvg = TIER_EXPECTATIONS[tier.toLowerCase()] || TIER_EXPECTATIONS.gold;
   const flags = CHAMPION_FLAGS[champion] || { cs_offset: 0, kda_offset: 0 };
+  const roleModifier = (role && ROLE_CS_MODIFIER[role]) || 0;
 
-  // 보정된 티어 평균 계산
+  // 보정된 티어 평균 계산 (챔피언 보정 + 역할 보정)
   const adjustedAvg = {
-    cs_per_min: tierAvg.cs_per_min + (flags.cs_offset || 0),
+    cs_per_min: Math.max(1, tierAvg.cs_per_min + (flags.cs_offset || 0) + roleModifier),
     kda: tierAvg.kda + (flags.kda_offset || 0),
     vision_score: tierAvg.vision_score,
   };
@@ -49,6 +50,7 @@ function analyzeChampionPool(championBreakdown, tier) {
       { cs_per_min: champ.avg_cs, kda: champ.avg_kda, vision_score: 0 },
       tier,
       champ.name,
+      champ.role,
     );
     return {
       ...champ,

@@ -11,4 +11,12 @@ module.exports = {
     grandmaster: { cs_per_min: 9.2, vision_score: 32, kda: 3.2 },
     challenger:  { cs_per_min: 9.5, vision_score: 35, kda: 3.5 },
   },
+  // 역할별 CS/분 보정값 (라이너 기준 대비 차이)
+  ROLE_CS_MODIFIER: {
+    JUNGLE:  -3.0,  // 정글러는 라이너보다 CS/분이 ~3 낮음
+    UTILITY: -4.0,  // 서포터는 CS를 거의 안 먹음
+    TOP:      0,
+    MIDDLE:   0,
+    BOTTOM:   0,
+  },
 };

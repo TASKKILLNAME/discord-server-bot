@@ -117,6 +117,7 @@ module.exports = {
               assists: 0,
               cs: 0,
               duration: 0,
+              roles: {},
             };
           }
           const s = champStats[name];
@@ -127,6 +128,8 @@ module.exports = {
           s.assists += p.assists;
           s.cs += p.totalMinionsKilled + p.neutralMinionsKilled;
           s.duration += detail.info.gameDuration / 60;
+          const role = p.teamPosition || 'UNKNOWN';
+          s.roles[role] = (s.roles[role] || 0) + 1;
         } catch (err) {
           console.error(`매치 조회 실패 (${matchId}):`, err.message);
         }
@@ -147,13 +150,19 @@ module.exports = {
       const top3 = Object.entries(champStats)
         .sort((a, b) => b[1].games - a[1].games)
         .slice(0, 3)
-        .map(([name, s]) => ({
-          name,
-          games: s.games,
-          winrate: s.wins / s.games,
-          avg_kda: (s.kills + s.assists) / Math.max(s.deaths, 1),
-          avg_cs: s.cs / s.duration,
-        }));
+        .map(([name, s]) => {
+          // 가장 많이 플레이한 포지션 추출
+          const primaryRole = Object.entries(s.roles)
+            .sort((a, b) => b[1] - a[1])[0]?.[0] || 'MIDDLE';
+          return {
+            name,
+            games: s.games,
+            winrate: s.wins / s.games,
+            avg_kda: (s.kills + s.assists) / Math.max(s.deaths, 1),
+            avg_cs: s.cs / s.duration,
+            role: primaryRole,
+          };
+        });
 
       // 5. 플레이 성향 계산
       const playStyle = {
