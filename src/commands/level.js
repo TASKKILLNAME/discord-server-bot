@@ -1,10 +1,19 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
+} = require('discord.js');
 const {
   getUserData,
   getLeaderboard,
   getUserRank,
   xpForNextLevel,
 } = require('../services/levelService');
+require('dotenv').config();
+
+const DASHBOARD_URL = process.env.DASHBOARD_URL || 'http://localhost:3000';
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -84,7 +93,16 @@ module.exports = {
       .setColor(0x5865f2)
       .setTimestamp();
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    // 리더보드 버튼
+    const lbUrl = `${DASHBOARD_URL}/leaderboard.html?guild=${guildId}&user=${userId}`;
+    const button = new ButtonBuilder()
+      .setLabel('서버 순위표 보기')
+      .setStyle(ButtonStyle.Link)
+      .setURL(lbUrl)
+      .setEmoji('🏆');
+    const row = new ActionRowBuilder().addComponents(button);
+
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
   },
 
   // ============================================
@@ -92,6 +110,7 @@ module.exports = {
   // ============================================
   async leaderboard(interaction) {
     const guildId = interaction.guild.id;
+    const userId  = interaction.user.id;
     const top = getLeaderboard(guildId, 10);
 
     if (top.length === 0) {
@@ -116,7 +135,17 @@ module.exports = {
       .setFooter({ text: `TOP ${top.length}명 표시` })
       .setTimestamp();
 
-    await interaction.reply({ embeds: [embed] });
+    // 리더보드 웹 페이지 버튼
+    const lbUrl = `${DASHBOARD_URL}/leaderboard.html?guild=${guildId}&user=${userId}`;
+    const button = new ButtonBuilder()
+      .setLabel('리더보드 보기')
+      .setStyle(ButtonStyle.Link)
+      .setURL(lbUrl)
+      .setEmoji('🏆');
+
+    const row = new ActionRowBuilder().addComponents(button);
+
+    await interaction.reply({ embeds: [embed], components: [row] });
   },
 
   // ============================================
@@ -171,6 +200,15 @@ module.exports = {
       .setColor(0x5865f2)
       .setTimestamp();
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    // 리더보드 버튼
+    const lbUrl = `${DASHBOARD_URL}/leaderboard.html?guild=${guildId}&user=${targetUser.id}`;
+    const button = new ButtonBuilder()
+      .setLabel('서버 순위표 보기')
+      .setStyle(ButtonStyle.Link)
+      .setURL(lbUrl)
+      .setEmoji('🏆');
+    const row = new ActionRowBuilder().addComponents(button);
+
+    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
   },
 };

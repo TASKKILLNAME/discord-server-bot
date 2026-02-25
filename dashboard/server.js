@@ -551,6 +551,51 @@ app.patch('/api/guilds/:guildId/settings', requireAuth, requireBot, async (req, 
 });
 
 // ============================================
+// Leaderboard Route (공개 - 인증 불필요)
+// ============================================
+
+app.get('/api/guilds/:guildId/leaderboard', requireBot, async (req, res) => {
+  try {
+    const { getLeaderboard, xpForNextLevel } = require('../src/services/levelService');
+    const guild = botClient.guilds.cache.get(req.params.guildId);
+    if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
+
+    const top = getLeaderboard(req.params.guildId, 50);
+
+    const enriched = await Promise.all(
+      top.map(async (user, i) => {
+        let member;
+        try { member = await guild.members.fetch(user.userId); } catch (e) {}
+
+        const nextXp = xpForNextLevel(user.level);
+        const progress = nextXp > 0 ? Math.round((user.xp / nextXp) * 100) : 100;
+
+        return {
+          rank: i + 1,
+          userId: user.userId,
+          displayName: member?.displayName || member?.user.username || `유저 ${user.userId}`,
+          avatar: member?.user.displayAvatarURL({ size: 128, extension: 'webp' }) || null,
+          level: user.level,
+          xp: user.xp,
+          nextLevelXp: nextXp,
+          progress,
+          messageCount: user.messageCount,
+        };
+      })
+    );
+
+    res.json({
+      guildId: req.params.guildId,
+      guildName: guild.name,
+      guildIcon: guild.iconURL({ size: 64 }),
+      leaderboard: enriched,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
 // Stats Route (for dashboard)
 // ============================================
 

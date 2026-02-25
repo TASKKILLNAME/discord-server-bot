@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>레벨 순위표</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1a1b1e;
+      color: #e3e5e8;
+      font-family: 'Noto Sans KR', -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #111214;
+      border-bottom: 1px solid #2f3136;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-icon {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #5865f2;
+    }
+    .header-title { font-size: 20px; font-weight: 700; color: #fff; }
+    .header-sub { font-size: 13px; color: #72767d; margin-top: 2px; }
+
+    /* ── Container ── */
+    .container { max-width: 820px; margin: 0 auto; padding: 32px 16px; }
+
+    /* ── Table header ── */
+    .lb-header {
+      display: grid;
+      grid-template-columns: 56px 1fr 90px 90px 72px;
+      align-items: center;
+      padding: 0 20px 12px;
+      color: #72767d;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    /* ── Row ── */
+    .lb-row {
+      display: grid;
+      grid-template-columns: 56px 1fr 90px 90px 72px;
+      align-items: center;
+      background: #2b2d31;
+      border-radius: 12px;
+      padding: 14px 20px;
+      margin-bottom: 8px;
+      transition: background 0.15s;
+      position: relative;
+    }
+    .lb-row:hover { background: #32353b; }
+    .lb-row.is-you {
+      background: #2c2f6b;
+      border: 1px solid #5865f2;
+    }
+    .lb-row.is-you:hover { background: #31357a; }
+
+    /* YOU badge */
+    .you-badge {
+      position: absolute;
+      left: -42px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #5865f2;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Rank ── */
+    .rank {
+      font-size: 18px;
+      font-weight: 700;
+      color: #72767d;
+      text-align: center;
+    }
+    .rank.gold   { color: #f0b232; }
+    .rank.silver { color: #c0c0c0; }
+    .rank.bronze { color: #cd7f32; }
+
+    /* ── User info ── */
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .avatar-wrap { position: relative; flex-shrink: 0; }
+    .avatar {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #36393f;
+    }
+    .username {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e3e5e8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── Stats ── */
+    .stat {
+      text-align: right;
+      font-size: 14px;
+      color: #b5bac1;
+    }
+    .stat strong {
+      display: block;
+      color: #e3e5e8;
+      font-size: 15px;
+    }
+
+    /* ── Level circle ── */
+    .level-wrap {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .level-circle {
+      position: relative;
+      width: 52px; height: 52px;
+    }
+    .level-circle svg {
+      width: 52px; height: 52px;
+      transform: rotate(-90deg);
+    }
+    .level-circle svg .bg   { stroke: #3a3d44; }
+    .level-circle svg .prog { stroke: #5865f2; transition: stroke-dashoffset 0.6s ease; }
+    .level-num {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center;
+      color: #72767d;
+      padding: 60px 0;
+      font-size: 16px;
+    }
+
+    /* ── Loading ── */
+    .loading {
+      text-align: center;
+      padding: 80px 0;
+      color: #72767d;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #3a3d44;
+      border-top-color: #5865f2;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .lb-header, .lb-row {
+        grid-template-columns: 44px 1fr 64px;
+      }
+      .stat:nth-child(4), .lb-header > *:nth-child(4) { display: none; }
+      .you-badge { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <img class="header-icon" id="guildIcon" src="" alt="서버 아이콘" onerror="this.style.display='none'"/>
+  <div>
+    <div class="header-title" id="guildName">레벨 순위표</div>
+    <div class="header-sub">서버 활동 기반 XP 랭킹</div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="lb-header">
+    <div style="text-align:center">#</div>
+    <div>유저</div>
+    <div style="text-align:right">메시지</div>
+    <div style="text-align:right">XP</div>
+    <div style="text-align:right">레벨</div>
+  </div>
+
+  <div id="lb-list">
+    <div class="loading">
+      <div class="spinner"></div>
+      <div>불러오는 중...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // URL: /leaderboard.html?guild=GUILD_ID&user=USER_ID
+  const params   = new URLSearchParams(location.search);
+  const guildId  = params.get('guild');
+  const myUserId = params.get('user');
+
+  if (!guildId) {
+    document.getElementById('lb-list').innerHTML =
+      '<div class="empty">⚠️ guild 파라미터가 필요합니다.</div>';
+  } else {
+    fetch(`/api/guilds/${guildId}/leaderboard`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+
+        // Header
+        document.getElementById('guildName').textContent = data.guildName + ' — 순위표';
+        if (data.guildIcon) document.getElementById('guildIcon').src = data.guildIcon;
+
+        const list = document.getElementById('lb-list');
+        list.innerHTML = '';
+
+        if (!data.leaderboard.length) {
+          list.innerHTML = '<div class="empty">아직 데이터가 없습니다. 채팅을 시작해보세요!</div>';
+          return;
+        }
+
+        data.leaderboard.forEach(u => {
+          const isYou = u.userId === myUserId;
+
+          const rankClass =
+            u.rank === 1 ? 'rank gold' :
+            u.rank === 2 ? 'rank silver' :
+            u.rank === 3 ? 'rank bronze' : 'rank';
+
+          const rankLabel =
+            u.rank === 1 ? '🥇' :
+            u.rank === 2 ? '🥈' :
+            u.rank === 3 ? '🥉' : u.rank;
+
+          // Circular progress
+          const r  = 22;
+          const circumference = 2 * Math.PI * r;
+          const offset = circumference - (u.progress / 100) * circumference;
+          const strokeColor =
+            u.rank === 1 ? '#f0b232' :
+            u.rank === 2 ? '#c0c0c0' :
+            u.rank === 3 ? '#cd7f32' : '#5865f2';
+
+          const row = document.createElement('div');
+          row.className = 'lb-row' + (isYou ? ' is-you' : '');
+          row.innerHTML = `
+            ${isYou ? '<span class="you-badge">YOU</span>' : ''}
+            <div class="${rankClass}">${rankLabel}</div>
+            <div class="user-info">
+              <div class="avatar-wrap">
+                <img class="avatar"
+                  src="${u.avatar || ''}"
+                  onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"
+                  alt="${u.displayName}"/>
+              </div>
+              <span class="username">${escHtml(u.displayName)}</span>
+            </div>
+            <div class="stat"><strong>${fmtNum(u.messageCount)}</strong>메시지</div>
+            <div class="stat"><strong>${fmtNum(u.xp)}</strong>XP</div>
+            <div class="level-wrap">
+              <div class="level-circle">
+                <svg viewBox="0 0 52 52">
+                  <circle class="bg"   cx="26" cy="26" r="${r}" fill="none" stroke-width="4"/>
+                  <circle class="prog" cx="26" cy="26" r="${r}" fill="none" stroke-width="4"
+                    stroke="${strokeColor}"
+                    stroke-dasharray="${circumference}"
+                    stroke-dashoffset="${offset}"
+                    stroke-linecap="round"/>
+                </svg>
+                <div class="level-num">${u.level}</div>
+              </div>
+            </div>
+          `;
+          list.appendChild(row);
+        });
+      })
+      .catch(err => {
+        document.getElementById('lb-list').innerHTML =
+          `<div class="empty">❌ 오류: ${err.message}</div>`;
+      });
+  }
+
+  function fmtNum(n) {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000)     return (n / 1_000).toFixed(1) + 'k';
+    return String(n);
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
+</body>
+</html>
