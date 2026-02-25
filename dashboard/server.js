@@ -560,7 +560,7 @@ app.get('/api/guilds/:guildId/leaderboard', requireBot, async (req, res) => {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
 
-    const top = getLeaderboard(req.params.guildId, 50);
+    const top = await getLeaderboard(req.params.guildId, 50);
 
     const enriched = await Promise.all(
       top.map(async (user, i) => {

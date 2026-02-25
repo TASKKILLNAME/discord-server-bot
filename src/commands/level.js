@@ -58,8 +58,8 @@ module.exports = {
   async myInfo(interaction) {
     const guildId = interaction.guild.id;
     const userId = interaction.user.id;
-    const data = getUserData(guildId, userId);
-    const rank = getUserRank(guildId, userId);
+    const data = await getUserData(guildId, userId);
+    const rank = await getUserRank(guildId, userId);
     const nextLevelXp = xpForNextLevel(data.level);
 
     // 📈 진행도 바
@@ -111,7 +111,7 @@ module.exports = {
   async leaderboard(interaction) {
     const guildId = interaction.guild.id;
     const userId  = interaction.user.id;
-    const top = getLeaderboard(guildId, 10);
+    const top = await getLeaderboard(guildId, 10);
 
     if (top.length === 0) {
       return interaction.reply({
@@ -163,8 +163,8 @@ module.exports = {
       });
     }
 
-    const data = getUserData(guildId, targetUser.id);
-    const rank = getUserRank(guildId, targetUser.id);
+    const data = await getUserData(guildId, targetUser.id);
+    const rank = await getUserRank(guildId, targetUser.id);
     const nextLevelXp = xpForNextLevel(data.level);
 
     // 📈 진행도 바

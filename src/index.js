@@ -14,6 +14,7 @@ const { startDashboard } = require('../dashboard/server');
 const { handleMemberJoin, handleGameSelect } = require('./services/welcomeService');
 const { addXp, createLevelUpEmbed } = require('./services/levelService');
 const { startLolTracker } = require('./services/lolTrackerService');
+const { initDb } = require('./db');
 
 // ============================================
 // 클라이언트 설정
@@ -53,6 +54,9 @@ client.once(Events.ClientReady, async (c) => {
   console.log(`🤖 ${c.user.tag} 봇이 온라인입니다!`);
   console.log(`📊 ${c.guilds.cache.size}개의 서버에서 활동 중`);
   console.log('========================================\n');
+
+  // DB 초기화
+  await initDb();
 
   // 상태 메시지 설정
   client.user.setActivity('/도움말 로 명령어 확인', { type: 3 }); // WATCHING
@@ -201,7 +205,7 @@ client.on(Events.MessageCreate, async (message) => {
   if (!message.guild) return;
 
   try {
-    const result = addXp(message.guild.id, message.author.id);
+    const result = await addXp(message.guild.id, message.author.id);
 
     // 🎉 레벨업 알림
     if (result.leveledUp) {
