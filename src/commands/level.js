@@ -41,14 +41,23 @@ module.exports = {
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
+    const isPrivate = sub === '내정보' || sub === '정보';
+    await interaction.deferReply({ ephemeral: isPrivate });
 
-    switch (sub) {
-      case '내정보':
-        return this.myInfo(interaction);
-      case '순위':
-        return this.leaderboard(interaction);
-      case '정보':
-        return this.userInfo(interaction);
+    try {
+      switch (sub) {
+        case '내정보':
+          return await this.myInfo(interaction);
+        case '순위':
+          return await this.leaderboard(interaction);
+        case '정보':
+          return await this.userInfo(interaction);
+      }
+    } catch (err) {
+      console.error('레벨 명령어 오류:', err);
+      await interaction.editReply({
+        content: `❌ 레벨 정보를 불러올 수 없습니다: ${err.message || '알 수 없는 오류'}`,
+      });
     }
   },
 
@@ -102,7 +111,7 @@ module.exports = {
       .setEmoji('🏆');
     const row = new ActionRowBuilder().addComponents(button);
 
-    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    await interaction.editReply({ embeds: [embed], components: [row] });
   },
 
   // ============================================
@@ -114,9 +123,8 @@ module.exports = {
     const top = await getLeaderboard(guildId, 10);
 
     if (top.length === 0) {
-      return interaction.reply({
+      return interaction.editReply({
         content: '📊 아직 레벨 데이터가 없습니다. 채팅을 시작해보세요!',
-        ephemeral: true,
       });
     }
 
@@ -145,7 +153,7 @@ module.exports = {
 
     const row = new ActionRowBuilder().addComponents(button);
 
-    await interaction.reply({ embeds: [embed], components: [row] });
+    await interaction.editReply({ embeds: [embed], components: [row] });
   },
 
   // ============================================
@@ -156,10 +164,9 @@ module.exports = {
     const targetMember = interaction.options.getMember('유저');
     const guildId = interaction.guild.id;
 
-    if (targetUser.bot) {
-      return interaction.reply({
+    if (!targetUser || targetUser.bot) {
+      return interaction.editReply({
         content: '❌ 봇의 레벨은 확인할 수 없습니다.',
-        ephemeral: true,
       });
     }
 
@@ -209,6 +216,6 @@ module.exports = {
       .setEmoji('🏆');
     const row = new ActionRowBuilder().addComponents(button);
 
-    await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+    await interaction.editReply({ embeds: [embed], components: [row] });
   },
 };
