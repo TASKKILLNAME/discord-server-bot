@@ -5,49 +5,61 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>레벨 순위표</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap');
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      background: #1a1b1e;
+      background:
+        radial-gradient(ellipse at 30% 0%, rgba(88, 101, 242, 0.07) 0%, transparent 50%),
+        radial-gradient(ellipse at 70% 100%, rgba(240, 178, 50, 0.05) 0%, transparent 50%),
+        #0f1015;
       color: #e3e5e8;
       font-family: 'Noto Sans KR', -apple-system, sans-serif;
       min-height: 100vh;
     }
 
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2d2f45; border-radius: 3px; }
+
     /* ── Header ── */
     .header {
-      background: #111214;
-      border-bottom: 1px solid #2f3136;
-      padding: 18px 32px;
+      background: linear-gradient(180deg, #111214 0%, #0d0e17 100%);
+      border-bottom: 2px solid;
+      border-image: linear-gradient(90deg, #5865f2, #7c3aed, #f0b232) 1;
+      padding: 22px 32px;
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
     }
     .header-icon {
-      width: 44px; height: 44px;
+      width: 48px; height: 48px;
       border-radius: 50%;
       object-fit: cover;
       background: #5865f2;
+      border: 2px solid #2a2f3e;
     }
-    .header-title { font-size: 20px; font-weight: 700; color: #fff; }
-    .header-sub { font-size: 13px; color: #72767d; margin-top: 2px; }
+    .header-text { display: flex; flex-direction: column; gap: 2px; }
+    .header-title { font-size: 22px; font-weight: 800; color: #fff; }
+    .header-sub { font-size: 13px; color: #5d5f7a; }
 
     /* ── Container ── */
-    .container { max-width: 820px; margin: 0 auto; padding: 32px 16px; }
+    .container { max-width: 860px; margin: 0 auto; padding: 36px 20px; }
 
     /* ── Table header ── */
     .lb-header {
       display: grid;
       grid-template-columns: 56px 1fr 90px 90px 72px;
       align-items: center;
-      padding: 0 20px 12px;
-      color: #72767d;
-      font-size: 12px;
+      padding: 0 20px 14px;
+      color: #5d5f7a;
+      font-size: 11px;
       font-weight: 700;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
+      border-bottom: 1px solid #2a2f3e;
+      margin-bottom: 12px;
     }
 
     /* ── Row ── */
@@ -55,53 +67,104 @@
       display: grid;
       grid-template-columns: 56px 1fr 90px 90px 72px;
       align-items: center;
-      background: #2b2d31;
-      border-radius: 12px;
+      background: #1e1f2e;
+      border: 1px solid #2a2f3e;
+      border-radius: 14px;
       padding: 14px 20px;
-      margin-bottom: 8px;
-      transition: background 0.15s;
-      position: relative;
+      margin-bottom: 10px;
+      transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+      opacity: 0;
+      animation: fadeSlideUp 0.4s ease forwards;
     }
-    .lb-row:hover { background: #32353b; }
+    .lb-row:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Top 3 rows */
+    .lb-row.top-1 {
+      background: linear-gradient(135deg, rgba(240, 178, 50, 0.08), rgba(240, 178, 50, 0.02));
+      border-color: rgba(240, 178, 50, 0.2);
+    }
+    .lb-row.top-1:hover { box-shadow: 0 4px 20px rgba(240, 178, 50, 0.15); }
+
+    .lb-row.top-2 {
+      background: linear-gradient(135deg, rgba(192, 192, 192, 0.06), rgba(192, 192, 192, 0.02));
+      border-color: rgba(192, 192, 192, 0.15);
+    }
+    .lb-row.top-2:hover { box-shadow: 0 4px 20px rgba(192, 192, 192, 0.12); }
+
+    .lb-row.top-3 {
+      background: linear-gradient(135deg, rgba(205, 127, 50, 0.06), rgba(205, 127, 50, 0.02));
+      border-color: rgba(205, 127, 50, 0.15);
+    }
+    .lb-row.top-3:hover { box-shadow: 0 4px 20px rgba(205, 127, 50, 0.12); }
+
+    /* YOU row */
     .lb-row.is-you {
-      background: #2c2f6b;
-      border: 1px solid #5865f2;
+      background: linear-gradient(135deg, rgba(88, 101, 242, 0.1), rgba(124, 58, 237, 0.05));
+      border-color: #5865f2;
     }
-    .lb-row.is-you:hover { background: #31357a; }
+    .lb-row.is-you:hover { box-shadow: 0 4px 20px rgba(88, 101, 242, 0.2); }
 
-    /* YOU badge */
-    .you-badge {
-      position: absolute;
-      left: -42px;
-      font-size: 11px;
-      font-weight: 700;
-      color: #5865f2;
-      letter-spacing: 0.05em;
+    /* ── Rank badge ── */
+    .rank-badge {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 800;
+      color: #fff;
+      margin: 0 auto;
     }
-
-    /* ── Rank ── */
-    .rank {
-      font-size: 18px;
-      font-weight: 700;
+    .rank-badge.gold {
+      background: linear-gradient(135deg, #f0b232, #e09a1e);
+      box-shadow: 0 0 12px rgba(240, 178, 50, 0.4);
+    }
+    .rank-badge.silver {
+      background: linear-gradient(135deg, #c0c0c0, #a8a8a8);
+      box-shadow: 0 0 12px rgba(192, 192, 192, 0.3);
+    }
+    .rank-badge.bronze {
+      background: linear-gradient(135deg, #cd7f32, #b06a28);
+      box-shadow: 0 0 12px rgba(205, 127, 50, 0.3);
+    }
+    .rank-badge.normal {
+      background: transparent;
+      border: 2px solid #3a3d44;
       color: #72767d;
-      text-align: center;
+      font-size: 13px;
+      font-weight: 700;
     }
-    .rank.gold   { color: #f0b232; }
-    .rank.silver { color: #c0c0c0; }
-    .rank.bronze { color: #cd7f32; }
 
     /* ── User info ── */
     .user-info {
       display: flex;
       align-items: center;
       gap: 12px;
+      min-width: 0;
     }
-    .avatar-wrap { position: relative; flex-shrink: 0; }
+    .avatar-ring {
+      flex-shrink: 0;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      padding: 2px;
+      background: linear-gradient(135deg, #5865f2, #7c3aed);
+    }
+    .avatar-ring.gold { background: linear-gradient(135deg, #f0b232, #e09a1e); }
+    .avatar-ring.silver { background: linear-gradient(135deg, #d4d4d4, #a8a8a8); }
+    .avatar-ring.bronze { background: linear-gradient(135deg, #cd7f32, #b06a28); }
     .avatar {
-      width: 40px; height: 40px;
+      width: 100%; height: 100%;
       border-radius: 50%;
       object-fit: cover;
-      background: #36393f;
+      border: 2px solid #0f1015;
+      display: block;
+    }
+    .username-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
     }
     .username {
       font-size: 15px;
@@ -111,17 +174,29 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .you-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #5865f2, #7c3aed);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+      letter-spacing: 0.05em;
+      flex-shrink: 0;
+    }
 
     /* ── Stats ── */
-    .stat {
-      text-align: right;
-      font-size: 14px;
-      color: #b5bac1;
-    }
-    .stat strong {
-      display: block;
-      color: #e3e5e8;
+    .stat { text-align: right; }
+    .stat-value {
       font-size: 15px;
+      font-weight: 700;
+      color: #e3e5e8;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: #5d5f7a;
+      margin-top: 2px;
     }
 
     /* ── Level circle ── */
@@ -138,60 +213,129 @@
       width: 52px; height: 52px;
       transform: rotate(-90deg);
     }
-    .level-circle svg .bg   { stroke: #3a3d44; }
-    .level-circle svg .prog { stroke: #5865f2; transition: stroke-dashoffset 0.6s ease; }
+    .level-circle svg .bg { stroke: #2a2f3e; }
+    .level-circle svg .prog {
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
     .level-num {
       position: absolute;
       inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 15px;
+      font-weight: 800;
       color: #fff;
     }
 
-    /* ── Empty state ── */
-    .empty {
-      text-align: center;
-      color: #72767d;
-      padding: 60px 0;
-      font-size: 16px;
+    /* ── Footer ── */
+    .lb-footer {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      padding: 28px 20px;
+      margin-top: 24px;
+      border-top: 1px solid #2a2f3e;
+    }
+    .footer-stat { text-align: center; }
+    .footer-value {
+      display: block;
+      font-size: 20px;
+      font-weight: 800;
+      color: #e3e5e8;
+    }
+    .footer-label {
+      font-size: 11px;
+      color: #5d5f7a;
+      margin-top: 4px;
     }
 
-    /* ── Loading ── */
-    .loading {
+    /* ── Empty / Error states ── */
+    .empty, .error {
       text-align: center;
-      padding: 80px 0;
-      color: #72767d;
+      padding: 80px 20px;
     }
-    .spinner {
-      width: 36px; height: 36px;
-      border: 3px solid #3a3d44;
-      border-top-color: #5865f2;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 16px;
+    .empty-icon, .error-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      opacity: 0.5;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #e3e5e8;
+      margin-bottom: 8px;
+    }
+    .empty-desc {
+      font-size: 14px;
+      color: #5d5f7a;
+    }
+    .error-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #f04747;
+    }
+
+    /* ── Skeleton loading ── */
+    .skeleton-row {
+      display: grid;
+      grid-template-columns: 56px 1fr 90px 90px 72px;
+      align-items: center;
+      padding: 14px 20px;
+      margin-bottom: 10px;
+      border-radius: 14px;
+      background: #1e1f2e;
+      border: 1px solid #2a2f3e;
+    }
+    .skeleton-bar {
+      border-radius: 7px;
+      background: linear-gradient(90deg, #252736 25%, #2e3040 50%, #252736 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
     /* ── Responsive ── */
-    @media (max-width: 600px) {
-      .lb-header, .lb-row {
-        grid-template-columns: 44px 1fr 64px;
+    @media (max-width: 768px) {
+      .header { padding: 16px 20px; }
+      .container { padding: 24px 12px; }
+      .lb-header, .lb-row, .skeleton-row {
+        grid-template-columns: 44px 1fr 70px 72px;
       }
-      .stat:nth-child(4), .lb-header > *:nth-child(4) { display: none; }
-      .you-badge { display: none; }
+      .stat.xp-col, .lb-header .xp-col { display: none; }
+      .lb-footer { gap: 24px; }
+    }
+
+    @media (max-width: 480px) {
+      .lb-header, .lb-row, .skeleton-row {
+        grid-template-columns: 40px 1fr 56px;
+      }
+      .stat.msg-col, .lb-header .msg-col,
+      .stat.xp-col, .lb-header .xp-col { display: none; }
+      .lb-row { padding: 12px 14px; border-radius: 10px; }
+      .avatar-ring { width: 36px; height: 36px; }
+      .level-circle, .level-circle svg { width: 44px; height: 44px; }
+      .lb-footer { flex-direction: column; gap: 12px; }
     }
   </style>
 </head>
 <body>
 
 <div class="header">
-  <img class="header-icon" id="guildIcon" src="" alt="서버 아이콘" onerror="this.style.display='none'"/>
-  <div>
+  <img class="header-icon" id="guildIcon" src="" alt="" onerror="this.style.display='none'"/>
+  <div class="header-text">
     <div class="header-title" id="guildName">레벨 순위표</div>
-    <div class="header-sub">서버 활동 기반 XP 랭킹</div>
+    <div class="header-sub" id="headerSub">서버 활동 기반 XP 랭킹</div>
   </div>
 </div>
 
@@ -199,29 +343,54 @@
   <div class="lb-header">
     <div style="text-align:center">#</div>
     <div>유저</div>
-    <div style="text-align:right">메시지</div>
-    <div style="text-align:right">XP</div>
+    <div class="msg-col" style="text-align:right">메시지</div>
+    <div class="xp-col" style="text-align:right">XP</div>
     <div style="text-align:right">레벨</div>
   </div>
 
-  <div id="lb-list">
-    <div class="loading">
-      <div class="spinner"></div>
-      <div>불러오는 중...</div>
-    </div>
-  </div>
+  <div id="lb-list"></div>
+  <div id="lb-footer"></div>
 </div>
 
 <script>
-  // URL: /leaderboard.html?guild=GUILD_ID&user=USER_ID
   const params   = new URLSearchParams(location.search);
   const guildId  = params.get('guild');
   const myUserId = params.get('user');
+  const listEl   = document.getElementById('lb-list');
+
+  // Show skeleton loading
+  function showSkeleton() {
+    listEl.innerHTML = Array.from({length: 6}, () => `
+      <div class="skeleton-row">
+        <div style="display:flex;justify-content:center">
+          <div class="skeleton-bar" style="width:32px;height:32px;border-radius:50%"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="skeleton-bar" style="width:40px;height:40px;border-radius:50%;flex-shrink:0"></div>
+          <div class="skeleton-bar" style="width:120px;height:14px"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <div class="skeleton-bar" style="width:50px;height:14px"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <div class="skeleton-bar" style="width:50px;height:14px"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <div class="skeleton-bar" style="width:44px;height:44px;border-radius:50%"></div>
+        </div>
+      </div>
+    `).join('');
+  }
 
   if (!guildId) {
-    document.getElementById('lb-list').innerHTML =
-      '<div class="empty">⚠️ guild 파라미터가 필요합니다.</div>';
+    listEl.innerHTML = `
+      <div class="error">
+        <div class="error-icon">⚠️</div>
+        <div class="error-title">guild 파라미터가 필요합니다</div>
+      </div>`;
   } else {
+    showSkeleton();
+
     fetch(`/api/guilds/${guildId}/leaderboard`)
       .then(r => r.json())
       .then(data => {
@@ -230,73 +399,132 @@
         // Header
         document.getElementById('guildName').textContent = data.guildName + ' — 순위표';
         if (data.guildIcon) document.getElementById('guildIcon').src = data.guildIcon;
+        document.getElementById('headerSub').textContent =
+          `${data.leaderboard.length}명 참여 · 서버 활동 기반 XP 랭킹`;
 
-        const list = document.getElementById('lb-list');
-        list.innerHTML = '';
+        listEl.innerHTML = '';
 
         if (!data.leaderboard.length) {
-          list.innerHTML = '<div class="empty">아직 데이터가 없습니다. 채팅을 시작해보세요!</div>';
+          listEl.innerHTML = `
+            <div class="empty">
+              <div class="empty-icon">💬</div>
+              <div class="empty-title">아직 데이터가 없습니다</div>
+              <div class="empty-desc">채팅을 시작하면 XP가 쌓이고 여기에 표시됩니다!</div>
+            </div>`;
           return;
         }
 
-        data.leaderboard.forEach(u => {
+        const R = 22;
+        const circumference = 2 * Math.PI * R;
+
+        data.leaderboard.forEach((u, i) => {
           const isYou = u.userId === myUserId;
 
-          const rankClass =
-            u.rank === 1 ? 'rank gold' :
-            u.rank === 2 ? 'rank silver' :
-            u.rank === 3 ? 'rank bronze' : 'rank';
+          // Rank badge class
+          const badgeClass =
+            u.rank === 1 ? 'rank-badge gold' :
+            u.rank === 2 ? 'rank-badge silver' :
+            u.rank === 3 ? 'rank-badge bronze' : 'rank-badge normal';
 
-          const rankLabel =
-            u.rank === 1 ? '🥇' :
-            u.rank === 2 ? '🥈' :
-            u.rank === 3 ? '🥉' : u.rank;
+          // Avatar ring class
+          const ringClass =
+            u.rank === 1 ? 'avatar-ring gold' :
+            u.rank === 2 ? 'avatar-ring silver' :
+            u.rank === 3 ? 'avatar-ring bronze' : 'avatar-ring';
 
-          // Circular progress
-          const r  = 22;
-          const circumference = 2 * Math.PI * r;
-          const offset = circumference - (u.progress / 100) * circumference;
+          // Row top class
+          const topClass =
+            u.rank === 1 ? ' top-1' :
+            u.rank === 2 ? ' top-2' :
+            u.rank === 3 ? ' top-3' : '';
+
+          // SVG stroke color
           const strokeColor =
             u.rank === 1 ? '#f0b232' :
             u.rank === 2 ? '#c0c0c0' :
             u.rank === 3 ? '#cd7f32' : '#5865f2';
 
+          const targetOffset = circumference - (u.progress / 100) * circumference;
+
           const row = document.createElement('div');
-          row.className = 'lb-row' + (isYou ? ' is-you' : '');
+          row.className = 'lb-row' + topClass + (isYou ? ' is-you' : '');
+          row.style.animationDelay = `${Math.min(i * 60, 1200)}ms`;
+
           row.innerHTML = `
-            ${isYou ? '<span class="you-badge">YOU</span>' : ''}
-            <div class="${rankClass}">${rankLabel}</div>
+            <div class="${badgeClass}">${u.rank}</div>
             <div class="user-info">
-              <div class="avatar-wrap">
+              <div class="${ringClass}">
                 <img class="avatar"
                   src="${u.avatar || ''}"
                   onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'"
-                  alt="${u.displayName}"/>
+                  alt="${escHtml(u.displayName)}"/>
               </div>
-              <span class="username">${escHtml(u.displayName)}</span>
+              <div class="username-wrap">
+                <span class="username">${escHtml(u.displayName)}</span>
+                ${isYou ? '<span class="you-badge">YOU</span>' : ''}
+              </div>
             </div>
-            <div class="stat"><strong>${fmtNum(u.messageCount)}</strong>메시지</div>
-            <div class="stat"><strong>${fmtNum(u.xp)}</strong>XP</div>
+            <div class="stat msg-col">
+              <div class="stat-value">${fmtNum(u.messageCount)}</div>
+              <div class="stat-label">메시지</div>
+            </div>
+            <div class="stat xp-col">
+              <div class="stat-value">${fmtNum(u.xp)}</div>
+              <div class="stat-label">XP</div>
+            </div>
             <div class="level-wrap">
               <div class="level-circle">
                 <svg viewBox="0 0 52 52">
-                  <circle class="bg"   cx="26" cy="26" r="${r}" fill="none" stroke-width="4"/>
-                  <circle class="prog" cx="26" cy="26" r="${r}" fill="none" stroke-width="4"
+                  <circle class="bg" cx="26" cy="26" r="${R}" fill="none" stroke-width="4"/>
+                  <circle class="prog" cx="26" cy="26" r="${R}" fill="none" stroke-width="4"
                     stroke="${strokeColor}"
                     stroke-dasharray="${circumference}"
-                    stroke-dashoffset="${offset}"
+                    stroke-dashoffset="${circumference}"
+                    data-target="${targetOffset}"
                     stroke-linecap="round"/>
                 </svg>
                 <div class="level-num">${u.level}</div>
               </div>
             </div>
           `;
-          list.appendChild(row);
+          listEl.appendChild(row);
         });
+
+        // Animate SVG progress circles after render
+        requestAnimationFrame(() => {
+          document.querySelectorAll('.prog').forEach(el => {
+            el.style.strokeDashoffset = el.dataset.target;
+          });
+        });
+
+        // Footer stats
+        const totalUsers = data.leaderboard.length;
+        const totalMessages = data.leaderboard.reduce((s, u) => s + u.messageCount, 0);
+        const totalXp = data.leaderboard.reduce((s, u) => s + u.xp, 0);
+
+        document.getElementById('lb-footer').innerHTML = `
+          <div class="lb-footer">
+            <div class="footer-stat">
+              <span class="footer-value">${fmtNum(totalUsers)}</span>
+              <span class="footer-label">참여자</span>
+            </div>
+            <div class="footer-stat">
+              <span class="footer-value">${fmtNum(totalMessages)}</span>
+              <span class="footer-label">총 메시지</span>
+            </div>
+            <div class="footer-stat">
+              <span class="footer-value">${fmtNum(totalXp)}</span>
+              <span class="footer-label">총 XP</span>
+            </div>
+          </div>
+        `;
       })
       .catch(err => {
-        document.getElementById('lb-list').innerHTML =
-          `<div class="empty">❌ 오류: ${err.message}</div>`;
+        listEl.innerHTML = `
+          <div class="error">
+            <div class="error-icon">❌</div>
+            <div class="error-title">${escHtml(err.message)}</div>
+          </div>`;
       });
   }
 
@@ -307,7 +535,7 @@
   }
 
   function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 </script>
 </body>
