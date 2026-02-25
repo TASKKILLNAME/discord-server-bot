@@ -1,10 +1,13 @@
 const { Pool } = require('pg');
 
+const isInternalRailway = process.env.DATABASE_URL?.includes('railway.internal');
+const isPublicRailway   = process.env.DATABASE_URL?.includes('railway.app');
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('railway')
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: isInternalRailway ? false
+     : isPublicRailway   ? { rejectUnauthorized: false }
+     : false,
 });
 
 /**
