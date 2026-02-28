@@ -195,8 +195,219 @@ ${patchData.content}`,
   }
 }
 
+// ============================================
+// TFT 패치노트 요약
+// ============================================
+
+async function summarizeTftPatchNotes(patchData) {
+  const anthropic = getClient();
+  if (!anthropic) {
+    return getFallbackSummary(patchData);
+  }
+
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: `다음은 전략적 팀 전투(TFT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
+
+**반드시 아래 형식을 지켜주세요:**
+
+## 📋 패치 요약
+(2-3줄로 이번 TFT 패치의 핵심 변경사항 요약)
+
+## 🔺 버프 (상향)
+(상향된 챔피언/특성 목록. 없으면 "해당 없음")
+- 이름: 변경 내용 요약
+
+## 🔻 너프 (하향)
+(하향된 챔피언/특성 목록. 없으면 "해당 없음")
+- 이름: 변경 내용 요약
+
+## 🔄 특성 변경
+(특성(시너지) 변경사항. 없으면 "해당 없음")
+
+## 🗡️ 아이템 변경
+(변경된 아이템. 없으면 "해당 없음")
+
+## 🌀 증강 변경
+(증강체 변경사항. 없으면 "해당 없음")
+
+## 🛠️ 시스템 변경
+(상점, 골드, 레벨링 등 시스템 변경. 없으면 "해당 없음")
+
+## 🐛 버그 수정
+(주요 버그 수정. 없으면 "해당 없음")
+
+**규칙:**
+- 구체적인 수치가 있으면 포함 (예: "체력 800 → 900")
+- 각 항목은 1-2줄로 요약
+- 이모지를 적절히 활용
+
+패치노트 내용:
+${patchData.content}`,
+        },
+      ],
+    });
+
+    return message.content[0].text;
+  } catch (err) {
+    console.error('TFT AI 요약 실패:', err.message);
+    return getFallbackSummary(patchData);
+  }
+}
+
+function formatTftForDiscord(summary, patchData) {
+  const sections = [];
+  const lines = summary.split('\n');
+  let currentSection = { title: '', content: '' };
+
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (currentSection.title) sections.push({ ...currentSection });
+      currentSection = { title: line.replace('## ', '').trim(), content: '' };
+    } else if (line.trim()) {
+      currentSection.content += line + '\n';
+    }
+  }
+  if (currentSection.title) sections.push(currentSection);
+
+  const fields = sections
+    .filter((s) => s.content.trim())
+    .map((s) => ({
+      name: s.title,
+      value:
+        s.content.trim().length > 1024
+          ? s.content.trim().substring(0, 1021) + '...'
+          : s.content.trim(),
+    }));
+
+  return {
+    title: `🎮 ${patchData.title}`,
+    url: patchData.url,
+    fields,
+    color: 0xc89b3c, // TFT 골드 컬러
+    timestamp: new Date().toISOString(),
+    footer: { text: '🤖 AI 요약 | 자세한 내용은 원문 확인' },
+    thumbnail: {
+      url: 'https://images.contentstack.io/v3/assets/blt731acb42bb3d1659/bltc3572889a8f37be9/5fb56ca12ea50d5e4d7da47b/TFT_LOGO.png',
+    },
+  };
+}
+
+// ============================================
+// Valorant 패치노트 요약
+// ============================================
+
+async function summarizeValorantPatchNotes(patchData) {
+  const anthropic = getClient();
+  if (!anthropic) {
+    return getFallbackSummary(patchData);
+  }
+
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: `다음은 발로란트(VALORANT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
+
+**반드시 아래 형식을 지켜주세요:**
+
+## 📋 패치 요약
+(2-3줄로 이번 발로란트 패치의 핵심 변경사항 요약)
+
+## 🔺 버프 (상향)
+(상향된 요원/무기 목록. 없으면 "해당 없음")
+- 이름: 변경 내용 요약
+
+## 🔻 너프 (하향)
+(하향된 요원/무기 목록. 없으면 "해당 없음")
+- 이름: 변경 내용 요약
+
+## 🧬 요원 변경
+(기타 요원 조정. 없으면 "해당 없음")
+- 요원이름: 변경 내용 요약
+
+## 🔫 무기 변경
+(무기 밸런스 변경. 없으면 "해당 없음")
+
+## 🗺️ 맵 변경
+(맵 업데이트. 없으면 "해당 없음")
+
+## 🛠️ 게임 시스템 변경
+(경제, 스파이크, 커리어 등 시스템 변경. 없으면 "해당 없음")
+
+## 🐛 버그 수정
+(주요 버그 수정. 없으면 "해당 없음")
+
+**규칙:**
+- 구체적인 수치가 있으면 포함
+- 각 항목은 1-2줄로 요약
+- 이모지를 적절히 활용
+
+패치노트 내용:
+${patchData.content}`,
+        },
+      ],
+    });
+
+    return message.content[0].text;
+  } catch (err) {
+    console.error('Valorant AI 요약 실패:', err.message);
+    return getFallbackSummary(patchData);
+  }
+}
+
+function formatValorantForDiscord(summary, patchData) {
+  const sections = [];
+  const lines = summary.split('\n');
+  let currentSection = { title: '', content: '' };
+
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (currentSection.title) sections.push({ ...currentSection });
+      currentSection = { title: line.replace('## ', '').trim(), content: '' };
+    } else if (line.trim()) {
+      currentSection.content += line + '\n';
+    }
+  }
+  if (currentSection.title) sections.push(currentSection);
+
+  const fields = sections
+    .filter((s) => s.content.trim())
+    .map((s) => ({
+      name: s.title,
+      value:
+        s.content.trim().length > 1024
+          ? s.content.trim().substring(0, 1021) + '...'
+          : s.content.trim(),
+    }));
+
+  return {
+    title: `🔫 ${patchData.title}`,
+    url: patchData.url,
+    fields,
+    color: 0xff4655, // 발로란트 레드 컬러
+    timestamp: new Date().toISOString(),
+    footer: { text: '🤖 AI 요약 | 자세한 내용은 원문 확인' },
+    thumbnail: {
+      url: 'https://images.contentstack.io/v3/assets/bltb6530b271fddd0b1/blt8a9da6d9e84cdee7/5f7a73cc64c8cc5c26fc4ac5/VALORANT_logo_image.jpg',
+    },
+  };
+}
+
 module.exports = {
   summarizePatchNotes,
   formatForDiscord,
   extractStructuredPatchData,
+  summarizeTftPatchNotes,
+  formatTftForDiscord,
+  summarizeValorantPatchNotes,
+  formatValorantForDiscord,
 };

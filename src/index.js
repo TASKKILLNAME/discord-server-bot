@@ -9,6 +9,9 @@ const path = require('path');
 require('dotenv').config();
 
 const { startPatchScheduler } = require('./services/patchScheduler');
+const { startTftScheduler } = require('./services/tftScheduler');
+const { startValorantScheduler } = require('./services/valorantScheduler');
+const { startLckScheduler } = require('./services/chzzkService');
 const { startEventScheduler } = require('./services/eventService');
 const { startDashboard } = require('../dashboard/server');
 const { handleMemberJoin, handleGameSelect } = require('./services/welcomeService');
@@ -63,6 +66,15 @@ client.once(Events.ClientReady, async (c) => {
 
   // 롤 패치노트 자동 체크 스케줄러 시작 (패치 동기화 완료 후 cron 시작)
   await startPatchScheduler(client);
+
+  // TFT 패치노트 자동 체크 스케줄러 시작
+  await startTftScheduler(client);
+
+  // 발로란트 패치노트 자동 체크 스케줄러 시작
+  await startValorantScheduler(client);
+
+  // 치지직 LCK 경기 시작 알림 스케줄러 시작
+  await startLckScheduler(client);
 
   // 이벤트 알림 스케줄러 시작
   startEventScheduler(client);
