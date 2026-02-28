@@ -6,8 +6,11 @@ const {
   VoiceConnectionStatus,
   entersState,
   NoSubscriberBehavior,
+  StreamType,
 } = require('@discordjs/voice');
-const play = require('play-dl');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 // 길드별 대기열 관리
 const queues = new Map();
@@ -39,37 +42,126 @@ function addSong(guildId, song) {
 }
 
 /**
+ * yt-dlp로 YouTube 검색 (여러 결과 반환)
+ */
+async function ytdlpSearch(query, limit = 5) {
+  const { stdout } = await execFileAsync('yt-dlp', [
+    `ytsearch${limit}:${query}`,
+    '--dump-json',
+    '--no-download',
+    '--no-warnings',
+    '--flat-playlist',
+  ], { timeout: 15000 });
+
+  return stdout
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+/**
+ * yt-dlp로 단일 영상 정보 가져오기
+ */
+async function ytdlpGetInfo(url) {
+  const { stdout } = await execFileAsync('yt-dlp', [
+    url,
+    '--dump-json',
+    '--no-download',
+    '--no-warnings',
+  ], { timeout: 15000 });
+
+  return JSON.parse(stdout.trim());
+}
+
+/**
  * YouTube 검색 또는 URL에서 곡 정보 추출
+ * - URL 직접 입력 지원
+ * - MV 영상 우선 검색 (공식 뮤직비디오 우선)
+ * - 자유로운 검색어 지원 (곡 제목만, 가사 일부, 별명 등)
  */
 async function searchAndGetInfo(query) {
   // URL인지 확인
-  if (play.yt_validate(query) === 'video') {
-    const info = await play.video_basic_info(query);
-    const details = info.video_details;
+  const urlPattern = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\//;
+  if (urlPattern.test(query)) {
+    const info = await ytdlpGetInfo(query);
     return {
-      title: details.title,
-      url: details.url,
-      duration: formatDuration(details.durationInSec),
-      durationSec: details.durationInSec,
-      thumbnail: details.thumbnails?.[details.thumbnails.length - 1]?.url || null,
-      channel: details.channel?.name || '알 수 없음',
+      title: info.title,
+      url: info.webpage_url || info.url,
+      duration: formatDuration(info.duration),
+      durationSec: info.duration || 0,
+      thumbnail: info.thumbnail || null,
+      channel: info.channel || info.uploader || '알 수 없음',
     };
   }
 
-  // 검색
-  const results = await play.search(query, { limit: 1, source: { youtube: 'video' } });
+  // MV 키워드가 이미 포함되어 있는지 확인
+  const mvKeywords = ['mv', 'music video', '뮤직비디오', 'official'];
+  const hasMvKeyword = mvKeywords.some((kw) => query.toLowerCase().includes(kw.toLowerCase()));
+
+  // MV 우선 검색
+  const searchQuery = hasMvKeyword ? query : `${query} MV`;
+  const results = await ytdlpSearch(searchQuery, 5);
+
   if (!results || results.length === 0) {
+    // MV 검색 실패 시 원본 쿼리로 재시도
+    if (!hasMvKeyword) {
+      const fallback = await ytdlpSearch(query, 3);
+      if (!fallback || fallback.length === 0) return null;
+      return pickBestResult(fallback);
+    }
     return null;
   }
 
-  const video = results[0];
+  return pickBestResult(results);
+}
+
+/**
+ * 검색 결과에서 MV/공식 영상 우선 선택
+ */
+function pickBestResult(results) {
+  // MV/공식 영상 우선 선택
+  const mvResult = results.find((v) => {
+    const title = (v.title || '').toLowerCase();
+    const channel = (v.channel || v.uploader || '').toLowerCase();
+    return (
+      title.includes('mv') ||
+      title.includes('m/v') ||
+      title.includes('music video') ||
+      title.includes('official') ||
+      title.includes('뮤직비디오') ||
+      channel.includes('official') ||
+      channel.includes('hybe') ||
+      channel.includes('sm entertainment') ||
+      channel.includes('jyp') ||
+      channel.includes('yg')
+    );
+  });
+
+  const video = mvResult || results[0];
+
+  // 라이브 영상이나 너무 긴 영상(1시간 이상) 제외
+  if (!video.duration || video.duration > 3600) {
+    const filtered = results.find((v) => v.duration > 0 && v.duration <= 3600);
+    if (filtered) return buildSongInfo(filtered);
+    // 전부 라이브/긴 영상이면 첫 번째 결과 사용
+    return buildSongInfo(results[0]);
+  }
+
+  return buildSongInfo(video);
+}
+
+/**
+ * 검색 결과에서 곡 정보 객체 생성
+ */
+function buildSongInfo(video) {
   return {
     title: video.title,
-    url: video.url,
-    duration: formatDuration(video.durationInSec),
-    durationSec: video.durationInSec,
-    thumbnail: video.thumbnails?.[video.thumbnails.length - 1]?.url || null,
-    channel: video.channel?.name || '알 수 없음',
+    url: video.webpage_url || video.url || `https://www.youtube.com/watch?v=${video.id}`,
+    duration: formatDuration(video.duration),
+    durationSec: video.duration || 0,
+    thumbnail: video.thumbnail || video.thumbnails?.[0]?.url || null,
+    channel: video.channel || video.uploader || '알 수 없음',
   };
 }
 
@@ -93,9 +185,21 @@ async function playCurrentSong(guildId) {
   queue.playing = true;
 
   try {
-    const stream = await play.stream(song.url);
-    const resource = createAudioResource(stream.stream, {
-      inputType: stream.type,
+    // yt-dlp로 오디오 스트림 생성
+    const ytdlp = spawn('yt-dlp', [
+      '-f', 'bestaudio',
+      '-o', '-',
+      '--no-warnings',
+      '--quiet',
+      song.url,
+    ]);
+
+    const resource = createAudioResource(ytdlp.stdout, {
+      inputType: StreamType.Arbitrary,
+    });
+
+    ytdlp.stderr.on('data', (data) => {
+      console.error('yt-dlp stderr:', data.toString());
     });
 
     queue.player.play(resource);
@@ -130,10 +234,11 @@ async function connectAndSetup(guildId, voiceChannel, textChannel, adapterCreato
   });
 
   try {
-    await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
-  } catch {
+    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+  } catch (err) {
+    console.error('음성채널 연결 실패 상세:', err.message, '| 상태:', connection.state?.status);
     connection.destroy();
-    throw new Error('음성채널 연결에 실패했습니다.');
+    throw new Error('음성채널 연결에 실패했습니다. 잠시 후 다시 시도해주세요.');
   }
 
   const player = createAudioPlayer({
