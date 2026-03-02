@@ -4,13 +4,9 @@ const {
   EmbedBuilder,
   ChannelType,
 } = require('discord.js');
-const { forceGetLatestPatch, loadLastPatch } = require('../services/tftCrawler');
-const {
-  sendPatchToChannel,
-  setPatchChannel,
-  removePatchChannel,
-  getPatchChannel,
-} = require('../services/tftScheduler');
+const { tft } = require('../services/unifiedPatchScheduler');
+const { forceGetLatestPatch, loadLastPatch } = tft;
+const { sendPatchToChannel, setPatchChannel, removePatchChannel, getPatchChannel } = tft;
 
 module.exports = {
   data: new SlashCommandBuilder()

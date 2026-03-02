@@ -4,13 +4,9 @@ const {
   EmbedBuilder,
   ChannelType,
 } = require('discord.js');
-const { forceGetLatestPatch, loadLastPatch } = require('../services/patchCrawler');
-const {
-  sendPatchToChannel,
-  setPatchChannel,
-  removePatchChannel,
-  getPatchChannel,
-} = require('../services/patchScheduler');
+const { lol } = require('../services/unifiedPatchScheduler');
+const { forceGetLatestPatch, loadLastPatch } = lol;
+const { sendPatchToChannel, setPatchChannel, removePatchChannel, getPatchChannel } = lol;
 
 module.exports = {
   data: new SlashCommandBuilder()

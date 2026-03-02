@@ -4,13 +4,9 @@ const {
   EmbedBuilder,
   ChannelType,
 } = require('discord.js');
-const { forceGetLatestPatch, loadLastPatch } = require('../services/valorantCrawler');
-const {
-  sendPatchToChannel,
-  setPatchChannel,
-  removePatchChannel,
-  getPatchChannel,
-} = require('../services/valorantScheduler');
+const { valorant } = require('../services/unifiedPatchScheduler');
+const { forceGetLatestPatch, loadLastPatch } = valorant;
+const { sendPatchToChannel, setPatchChannel, removePatchChannel, getPatchChannel } = valorant;
 
 module.exports = {
   data: new SlashCommandBuilder()

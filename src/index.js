@@ -8,9 +8,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const { startPatchScheduler } = require('./services/patchScheduler');
-const { startTftScheduler } = require('./services/tftScheduler');
-const { startValorantScheduler } = require('./services/valorantScheduler');
+const { startUnifiedPatchScheduler } = require('./services/unifiedPatchScheduler');
 const { startLckScheduler } = require('./services/chzzkService');
 const { startEventScheduler } = require('./services/eventService');
 const { startDashboard } = require('../dashboard/server');
@@ -27,7 +25,6 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
   ],
 });
@@ -64,14 +61,8 @@ client.once(Events.ClientReady, async (c) => {
   // 상태 메시지 설정
   client.user.setActivity('/도움말 로 명령어 확인', { type: 3 }); // WATCHING
 
-  // 롤 패치노트 자동 체크 스케줄러 시작 (패치 동기화 완료 후 cron 시작)
-  await startPatchScheduler(client);
-
-  // TFT 패치노트 자동 체크 스케줄러 시작
-  await startTftScheduler(client);
-
-  // 발로란트 패치노트 자동 체크 스케줄러 시작
-  await startValorantScheduler(client);
+  // 통합 패치노트 자동 체크 스케줄러 시작 (롤/발로란트/TFT)
+  await startUnifiedPatchScheduler(client);
 
   // 치지직 LCK 경기 시작 알림 스케줄러 시작
   await startLckScheduler(client);
