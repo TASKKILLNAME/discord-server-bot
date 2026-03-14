@@ -31,7 +31,15 @@ async function initDb() {
         PRIMARY KEY (guild_id, user_id)
       );
     `);
-    console.log('✅ DB 초기화 완료 (levels 테이블)');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS welcome_settings (
+        guild_id   VARCHAR(20) PRIMARY KEY,
+        enabled    BOOLEAN     DEFAULT false,
+        channel_id VARCHAR(20),
+        message    TEXT
+      );
+    `);
+    console.log('✅ DB 초기화 완료 (levels, welcome_settings 테이블)');
   } catch (err) {
     console.error('❌ DB 초기화 실패:', err.message);
     console.error('   DATABASE_URL 설정 확인:', process.env.DATABASE_URL ? '있음' : '없음');

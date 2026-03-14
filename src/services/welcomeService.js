@@ -1,88 +1,45 @@
-const fs = require('fs');
-const path = require('path');
+const { pool } = require('../db');
 const {
   EmbedBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
 } = require('discord.js');
 
-const DATA_FILE = path.join(__dirname, '../../data/welcomeSettings.json');
-
 // ============================================
-// 🎮 게임 역할 목록
+// 🎮 게임 역할 목록 (ID 기반으로 안정적 매칭)
 // ============================================
 const GAME_ROLES = [
-  { name: 'LOL', label: '🎮 League of Legends', emoji: '🎮', color: '#C8AA6E' },
-  { name: 'VALORANT', label: '🔫 VALORANT', emoji: '🔫', color: '#FF4655' },
-  { name: 'PUBG', label: '🪖 배틀그라운드', emoji: '🪖', color: '#F2A900' },
-  { name: 'Rainbow6', label: '🛡️ Rainbow Six Siege', emoji: '🛡️', color: '#2E6EA5' },
-  { name: 'Apex', label: '🏹 Apex Legends', emoji: '🏹', color: '#DA292A' },
+  { id: '1462734611527499838', name: 'LOL',      label: '🎮 League of Legends', emoji: '🎮' },
+  { id: '1462734448901492843', name: 'valorant', label: '🔫 VALORANT',           emoji: '🔫' },
+  { id: '1462734548008697856', name: 'apex',     label: '🏹 Apex Legends',       emoji: '🏹' },
+  { id: '1462736830981210225', name: 'pubg',     label: '🪖 배틀그라운드',        emoji: '🪖' },
+  { id: '1468235099454832774', name: 'rainbow6', label: '🛡️ Rainbow Six Siege', emoji: '🛡️' },
+  { id: '1482258801242669137', name: 'tarkov',   label: '🔫 Escape from Tarkov', emoji: '🎯' },
 ];
 
 // ============================================
-// 📁 데이터 관리
+// 📁 DB 설정 관리 (welcomeSettings)
 // ============================================
-function loadWelcomeSettings() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const data = fs.readFileSync(DATA_FILE, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error('환영 설정 로드 오류:', err);
-  }
-  return {};
+async function getGuildSettings(guildId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM welcome_settings WHERE guild_id = $1',
+    [guildId]
+  );
+  return rows[0] || null;
 }
 
-function saveWelcomeSettings(settings) {
-  try {
-    const dir = path.dirname(DATA_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(settings, null, 2));
-  } catch (err) {
-    console.error('환영 설정 저장 오류:', err);
-  }
-}
-
-function getGuildSettings(guildId) {
-  const settings = loadWelcomeSettings();
-  return settings[guildId] || null;
-}
-
-function updateGuildSettings(guildId, newSettings) {
-  const settings = loadWelcomeSettings();
-  settings[guildId] = { ...settings[guildId], ...newSettings };
-  saveWelcomeSettings(settings);
-  return settings[guildId];
-}
-
-// ============================================
-// 🎮 게임 역할 자동 생성
-// ============================================
-async function ensureGameRoles(guild) {
-  const existingRoles = guild.roles.cache;
-  const createdRoles = [];
-
-  for (const game of GAME_ROLES) {
-    const existing = existingRoles.find((r) => r.name === game.name);
-    if (!existing) {
-      try {
-        const role = await guild.roles.create({
-          name: game.name,
-          color: game.color,
-          reason: '환영 시스템 - 게임 역할 자동 생성',
-        });
-        createdRoles.push(role.name);
-        console.log(`🎮 게임 역할 생성: ${role.name} (${guild.name})`);
-      } catch (err) {
-        console.error(`게임 역할 생성 실패 (${game.name}):`, err);
-      }
-    }
-  }
-
-  return createdRoles;
+async function updateGuildSettings(guildId, newSettings) {
+  const { enabled, channel_id, message } = newSettings;
+  await pool.query(
+    `INSERT INTO welcome_settings (guild_id, enabled, channel_id, message)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (guild_id) DO UPDATE
+     SET enabled = COALESCE($2, welcome_settings.enabled),
+         channel_id = COALESCE($3, welcome_settings.channel_id),
+         message = COALESCE($4, welcome_settings.message)`,
+    [guildId, enabled ?? null, channel_id ?? null, message ?? null]
+  );
+  return getGuildSettings(guildId);
 }
 
 // ============================================
@@ -102,13 +59,13 @@ function parseTemplate(template, member) {
 function createGameSelectMenu() {
   const selectMenu = new StringSelectMenuBuilder()
     .setCustomId('game_select')
-    .setPlaceholder('🎮 플레이하는 게임을 선택해주세요!')
+    .setPlaceholder('🎮 플레이하는 게임을 선택해주세요! (복수 선택 가능)')
     .setMinValues(0)
     .setMaxValues(GAME_ROLES.length)
     .addOptions(
       GAME_ROLES.map((game) => ({
         label: game.label,
-        value: game.name,
+        value: game.id,   // ← ID 기반으로 변경
         emoji: game.emoji,
       }))
     );
@@ -121,7 +78,7 @@ function createGameSelectMenu() {
 // ============================================
 function createWelcomeEmbed(member, settings) {
   const defaultMessage =
-    '{{user}}님, **{{server}}**에 오신 것을 환영합니다! 🎉\n아래에서 플레이하는 게임을 선택해주세요!';
+    '{{user}}님, **{{server}}**에 오신 것을 환영합니다! 🎉\n아래에서 플레이하는 게임을 선택하면 해당 게임 채널에 입장할 수 있어요!';
   const message = settings?.message || defaultMessage;
   const parsedMessage = parseTemplate(message, member);
 
@@ -132,11 +89,8 @@ function createWelcomeEmbed(member, settings) {
     .addFields(
       { name: '👤 멤버', value: member.user.tag, inline: true },
       { name: '👥 멤버 수', value: `${member.guild.memberCount}명`, inline: true },
-      {
-        name: '📅 가입일',
-        value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`,
-        inline: true,
-      }
+      { name: '📅 가입일', value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`, inline: true },
+      { name: '🎮 게임 채널', value: '아래에서 게임을 선택하면\n해당 카테고리가 보여요!', inline: false }
     )
     .setColor(0x57f287)
     .setFooter({ text: member.guild.name })
@@ -147,28 +101,27 @@ function createWelcomeEmbed(member, settings) {
 // 👋 멤버 입장 처리
 // ============================================
 async function handleMemberJoin(member) {
-  const settings = getGuildSettings(member.guild.id);
+  let settings;
+  try {
+    settings = await getGuildSettings(member.guild.id);
+  } catch (err) {
+    console.error('환영 설정 로드 오류 (DB):', err.message);
+    return;
+  }
 
-  if (!settings || !settings.enabled || !settings.channelId) return;
+  if (!settings || !settings.enabled || !settings.channel_id) return;
 
   try {
-    // 🎮 게임 역할 확인/생성
-    await ensureGameRoles(member.guild);
-
-    const channel = member.guild.channels.cache.get(settings.channelId);
+    const channel = member.guild.channels.cache.get(settings.channel_id);
     if (!channel) {
-      console.error(`환영 채널을 찾을 수 없음: ${settings.channelId}`);
+      console.error(`환영 채널을 찾을 수 없음: ${settings.channel_id}`);
       return;
     }
 
-    const embed = createWelcomeEmbed(member, settings);
+    const embed   = createWelcomeEmbed(member, settings);
     const gameMenu = createGameSelectMenu();
 
-    await channel.send({
-      embeds: [embed],
-      components: [gameMenu],
-    });
-
+    await channel.send({ embeds: [embed], components: [gameMenu] });
     console.log(`👋 환영 메시지 전송: ${member.user.tag} → ${member.guild.name}`);
   } catch (err) {
     console.error('환영 메시지 전송 오류:', err);
@@ -176,37 +129,30 @@ async function handleMemberJoin(member) {
 }
 
 // ============================================
-// 🎮 게임 선택 처리
+// 🎮 게임 선택 처리 (role ID 기반)
 // ============================================
 async function handleGameSelect(interaction) {
-  const selectedGames = interaction.values;
+  const selectedRoleIds = interaction.values; // 이제 role ID 배열
   const member = interaction.member;
-  const guild = interaction.guild;
+  const guild  = interaction.guild;
 
   try {
     await interaction.deferReply({ ephemeral: true });
 
-    // 🎮 게임 역할 확인/생성
-    await ensureGameRoles(guild);
-
-    const addedRoles = [];
+    const addedRoles   = [];
     const removedRoles = [];
 
     for (const game of GAME_ROLES) {
-      const role = guild.roles.cache.find((r) => r.name === game.name);
+      const role = guild.roles.cache.get(game.id);
       if (!role) continue;
 
-      if (selectedGames.includes(game.name)) {
-        // 선택한 게임 → 역할 부여
-        if (!member.roles.cache.has(role.id)) {
+      if (selectedRoleIds.includes(game.id)) {
+        if (!member.roles.cache.has(game.id)) {
           await member.roles.add(role);
-          addedRoles.push(game.label);
-        } else {
-          addedRoles.push(game.label); // 이미 있어도 표시
         }
+        addedRoles.push(game.label);
       } else {
-        // 선택 안 한 게임 → 역할 제거
-        if (member.roles.cache.has(role.id)) {
+        if (member.roles.cache.has(game.id)) {
           await member.roles.remove(role);
           removedRoles.push(game.label);
         }
@@ -215,10 +161,14 @@ async function handleGameSelect(interaction) {
 
     const embed = new EmbedBuilder().setColor(0x5865f2).setTimestamp();
 
-    if (selectedGames.length > 0) {
+    if (addedRoles.length > 0) {
       embed
         .setTitle('🎮 게임 역할이 설정되었습니다!')
-        .setDescription(addedRoles.map((r) => `✅ ${r}`).join('\n'));
+        .setDescription(
+          addedRoles.map(r => `✅ ${r}`).join('\n') +
+          (removedRoles.length > 0 ? '\n\n' + removedRoles.map(r => `❌ ${r} (해제)`).join('\n') : '')
+        )
+        .addFields({ name: '💡 TIP', value: '선택한 게임 카테고리 채널이 이제 보여요!' });
     } else {
       embed
         .setTitle('🎮 게임 역할이 모두 해제되었습니다')
@@ -239,11 +189,8 @@ async function handleGameSelect(interaction) {
 
 module.exports = {
   GAME_ROLES,
-  loadWelcomeSettings,
-  saveWelcomeSettings,
   getGuildSettings,
   updateGuildSettings,
-  ensureGameRoles,
   createWelcomeEmbed,
   createGameSelectMenu,
   handleMemberJoin,
