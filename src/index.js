@@ -17,6 +17,7 @@ const { addXp, createLevelUpEmbed } = require('./services/levelService');
 const { startLolTracker } = require('./services/lolTrackerService');
 const { initDb } = require('./db');
 const { handleVoiceStateUpdate, cleanupTempChannels } = require('./services/tempVoiceService');
+const { handleVoteButton } = require('./services/voteService');
 
 // ============================================
 // 클라이언트 설정
@@ -164,6 +165,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: '❌ 오류가 발생했습니다.', ephemeral: true });
           }
+        }
+      }
+      return;
+    }
+
+    // 🗳️ 투표 버튼
+    if (interaction.customId.startsWith('vote_')) {
+      try {
+        await handleVoteButton(interaction);
+      } catch (error) {
+        console.error('투표 버튼 오류:', error);
+        if (!interaction.replied && !interaction.deferred) {
+          await interaction.reply({ content: '❌ 오류가 발생했습니다.', ephemeral: true });
         }
       }
       return;
