@@ -39,7 +39,67 @@ async function initDb() {
         message    TEXT
       );
     `);
-    console.log('✅ DB 초기화 완료 (levels, welcome_settings 테이블)');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS lol_tracker_settings (
+        guild_id   VARCHAR(20) PRIMARY KEY,
+        channel_id VARCHAR(20)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS lol_tracker_players (
+        guild_id      VARCHAR(20)  NOT NULL,
+        user_id       VARCHAR(20)  NOT NULL,
+        game_name     VARCHAR(100) NOT NULL,
+        tag_line      VARCHAR(20)  NOT NULL,
+        puuid         VARCHAR(100) NOT NULL,
+        in_game       BOOLEAN      DEFAULT false,
+        last_game_id  VARCHAR(50),
+        last_rank     JSONB,
+        registered_at TIMESTAMPTZ  DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS patch_state (
+        game       VARCHAR(20) PRIMARY KEY,
+        last_url   TEXT,
+        last_title TEXT,
+        checked_at TIMESTAMPTZ
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS memberships (
+        guild_id        VARCHAR(20) NOT NULL,
+        user_id         VARCHAR(20) NOT NULL,
+        credits         INTEGER     DEFAULT 0,
+        total_purchased INTEGER     DEFAULT 0,
+        tier            VARCHAR(20),
+        PRIMARY KEY (guild_id, user_id)
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS membership_history (
+        id        SERIAL PRIMARY KEY,
+        guild_id  VARCHAR(20) NOT NULL,
+        user_id   VARCHAR(20) NOT NULL,
+        type      VARCHAR(10) NOT NULL,
+        amount    INTEGER     NOT NULL,
+        action    TEXT,
+        tier      VARCHAR(20),
+        admin_id  VARCHAR(20),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS patch_channels (
+        guild_id   VARCHAR(20) NOT NULL,
+        game       VARCHAR(20) NOT NULL,
+        channel_id VARCHAR(20) NOT NULL,
+        set_at     TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (guild_id, game)
+      );
+    `);
+    console.log('✅ DB 초기화 완료 (levels, welcome_settings, lol_tracker, patch_state, memberships, patch_channels 테이블)');
   } catch (err) {
     console.error('❌ DB 초기화 실패:', err.message);
     console.error('   DATABASE_URL 설정 확인:', process.env.DATABASE_URL ? '있음' : '없음');

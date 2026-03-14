@@ -645,10 +645,10 @@ app.get('/api/auth/is-owner', requireAuth, (req, res) => {
 });
 
 // 전체 멤버십 통계
-app.get('/api/membership/stats', requireOwner, (req, res) => {
+app.get('/api/membership/stats', requireOwner, async (req, res) => {
   try {
     const { getMembershipStats } = require('../src/services/membershipService');
-    const stats = getMembershipStats();
+    const stats = await getMembershipStats();
 
     // 서버 이름 매핑
     if (botClient) {
@@ -665,10 +665,10 @@ app.get('/api/membership/stats', requireOwner, (req, res) => {
 });
 
 // 전체 서버 멤버십 데이터
-app.get('/api/membership', requireOwner, (req, res) => {
+app.get('/api/membership', requireOwner, async (req, res) => {
   try {
     const { getAllMembershipData } = require('../src/services/membershipService');
-    const data = getAllMembershipData();
+    const data = await getAllMembershipData();
 
     // 서버 이름 + 유저 이름 매핑
     const result = {};
@@ -700,7 +700,7 @@ app.get('/api/membership/:guildId', requireOwner, requireBot, async (req, res) =
     const { getGuildMembershipData } = require('../src/services/membershipService');
     const guildId = req.params.guildId;
     const guild = botClient.guilds.cache.get(guildId);
-    const users = getGuildMembershipData(guildId);
+    const users = await getGuildMembershipData(guildId);
 
     // 멤버 정보 fetch
     if (guild) {
@@ -750,7 +750,7 @@ app.get('/api/membership/guilds/:guildId/members', requireOwner, requireBot, asy
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
 
     const { getGuildMembershipData } = require('../src/services/membershipService');
-    const membershipData = getGuildMembershipData(req.params.guildId);
+    const membershipData = await getGuildMembershipData(req.params.guildId);
 
     const members = await guild.members.fetch();
     const memberList = members
@@ -793,7 +793,7 @@ app.post('/api/membership/:guildId/:userId/charge', requireOwner, requireBot, as
       }
     }
 
-    const result = chargeCredits(guildId, userId, amount, tierName, process.env.BOT_OWNER_ID);
+    const result = await chargeCredits(guildId, userId, amount, tierName, process.env.BOT_OWNER_ID);
 
     // 유저에게 DM 알림 전송
     let dmSent = false;

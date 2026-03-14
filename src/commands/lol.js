@@ -164,7 +164,7 @@ module.exports = {
   async unregister(interaction) {
     const targetUser = interaction.options.getUser('멤버') || interaction.user;
     const isSelf = targetUser.id === interaction.user.id;
-    const removed = unregisterPlayer(interaction.guild.id, targetUser.id);
+    const removed = await unregisterPlayer(interaction.guild.id, targetUser.id);
 
     if (removed) {
       // 트래커 역할 제거
@@ -186,8 +186,8 @@ module.exports = {
   // 📋 등록 목록
   // ============================================
   async list(interaction) {
-    const players = getRegisteredPlayers(interaction.guild.id);
-    const channelId = getTrackerChannel(interaction.guild.id);
+    const players = await getRegisteredPlayers(interaction.guild.id);
+    const channelId = await getTrackerChannel(interaction.guild.id);
     const entries = Object.entries(players);
 
     if (entries.length === 0) {
@@ -232,7 +232,7 @@ module.exports = {
     await interaction.deferReply({ ephemeral: true });
 
     const channel = interaction.options.getChannel('채널');
-    setTrackerChannel(interaction.guild.id, channel.id);
+    await setTrackerChannel(interaction.guild.id, channel.id);
 
     // 전용 역할 생성 + 채널 권한 설정
     const role = await ensureTrackerRole(interaction.guild);
@@ -240,7 +240,7 @@ module.exports = {
       await setChannelPermissions(channel, role);
 
       // 이미 등록된 멤버들에게 역할 부여
-      const players = getRegisteredPlayers(interaction.guild.id);
+      const players = await getRegisteredPlayers(interaction.guild.id);
       for (const discordUserId of Object.keys(players)) {
         await addTrackerRole(interaction.guild, discordUserId);
       }
@@ -269,8 +269,8 @@ module.exports = {
     const tagLine = interaction.options.getString('태그');
 
     // 크레딧 보유 체크 (차감은 AI 분석 성공 후)
-    if (!hasCredit(interaction.guild.id, interaction.user.id)) {
-      const remaining = getCredits(interaction.guild.id, interaction.user.id);
+    if (!(await hasCredit(interaction.guild.id, interaction.user.id))) {
+      const remaining = await getCredits(interaction.guild.id, interaction.user.id);
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
@@ -288,7 +288,7 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      const credits = getCredits(interaction.guild.id, interaction.user.id);
+      const credits = await getCredits(interaction.guild.id, interaction.user.id);
       const loadingEmbed = new EmbedBuilder()
         .setTitle('🔍 실시간 게임 정보를 가져오는 중...')
         .setDescription(
@@ -326,7 +326,7 @@ module.exports = {
         const fields = parseAnalysisToFields(analysis);
 
         // ✅ AI 분석 성공 → 크레딧 차감
-        useCredit(interaction.guild.id, interaction.user.id, '실시간 분석 (최근게임 대체)');
+        await useCredit(interaction.guild.id, interaction.user.id, '실시간 분석 (최근게임 대체)');
 
         const m = matchData.matches[0];
         const resultEmbed = new EmbedBuilder()
@@ -359,7 +359,7 @@ module.exports = {
       const analysisFields = parseAnalysisToFields(analysis);
 
       // ✅ AI 분석 성공 → 크레딧 차감
-      useCredit(interaction.guild.id, interaction.user.id, '실시간 분석');
+      await useCredit(interaction.guild.id, interaction.user.id, '실시간 분석');
 
       const blueDesc = gameData.blueTeam
         .map((p) => `**${p.championName}** | ${p.rank}\n${p.spell1} / ${p.spell2}`)
@@ -420,8 +420,8 @@ module.exports = {
     const count = interaction.options.getInteger('횟수') || 5;
 
     // 크레딧 보유 체크 (차감은 AI 분석 성공 후)
-    if (!hasCredit(interaction.guild.id, interaction.user.id)) {
-      const remaining = getCredits(interaction.guild.id, interaction.user.id);
+    if (!(await hasCredit(interaction.guild.id, interaction.user.id))) {
+      const remaining = await getCredits(interaction.guild.id, interaction.user.id);
       return interaction.reply({
         embeds: [
           new EmbedBuilder()
@@ -439,7 +439,7 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      const credits = getCredits(interaction.guild.id, interaction.user.id);
+      const credits = await getCredits(interaction.guild.id, interaction.user.id);
       const loadingEmbed = new EmbedBuilder()
         .setTitle('🔍 최근 전적을 가져오는 중...')
         .setDescription(
@@ -466,7 +466,7 @@ module.exports = {
       const analysisFields = parseAnalysisToFields(analysis);
 
       // ✅ AI 분석 성공 → 크레딧 차감
-      useCredit(interaction.guild.id, interaction.user.id, '최근전적 분석');
+      await useCredit(interaction.guild.id, interaction.user.id, '최근전적 분석');
 
       // 프로필 임베드
       const wins = matchData.matches.filter((m) => m.win).length;

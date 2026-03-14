@@ -1,17 +1,18 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
-const fs = require('fs');
-const path = require('path');
-
-const DATA_FILE = path.join(__dirname, '../../data/lastPatch.json');
+const { pool } = require('../db');
 
 /**
  * 마지막으로 확인한 패치 정보 로드
  */
-function loadLastPatch() {
+async function loadLastPatch(game = 'lol') {
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+    const { rows } = await pool.query(
+      'SELECT * FROM patch_state WHERE game = $1',
+      [game]
+    );
+    if (rows[0]) {
+      return { lastUrl: rows[0].last_url, lastTitle: rows[0].last_title };
     }
   } catch (err) {
     console.error('패치 데이터 로드 실패:', err.message);
@@ -22,13 +23,15 @@ function loadLastPatch() {
 /**
  * 마지막 패치 정보 저장
  */
-function saveLastPatch(data) {
+async function saveLastPatch(data, game = 'lol') {
   try {
-    const dir = path.dirname(DATA_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    await pool.query(
+      `INSERT INTO patch_state (game, last_url, last_title, checked_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (game) DO UPDATE
+       SET last_url = $2, last_title = $3, checked_at = NOW()`,
+      [game, data.lastUrl, data.lastTitle]
+    );
   } catch (err) {
     console.error('패치 데이터 저장 실패:', err.message);
   }
@@ -154,7 +157,7 @@ async function crawlPatchContent(url) {
  * 새 패치노트가 있는지 확인
  */
 async function checkForNewPatch() {
-  const lastPatch = loadLastPatch();
+  const lastPatch = await loadLastPatch();
   const latest = await getLatestPatchUrl();
 
   if (!latest.url) {
@@ -175,10 +178,9 @@ async function checkForNewPatch() {
 
   if (patchData) {
     // 마지막 패치 정보 저장
-    saveLastPatch({
+    await saveLastPatch({
       lastUrl: latest.url,
       lastTitle: latest.title || patchData.title,
-      checkedAt: new Date().toISOString(),
     });
   }
 
@@ -198,10 +200,9 @@ async function forceGetLatestPatch() {
   const patchData = await crawlPatchContent(latest.url);
 
   if (patchData) {
-    saveLastPatch({
+    await saveLastPatch({
       lastUrl: latest.url,
       lastTitle: latest.title || patchData.title,
-      checkedAt: new Date().toISOString(),
     });
   }
 

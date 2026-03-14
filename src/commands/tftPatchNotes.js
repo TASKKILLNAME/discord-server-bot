@@ -97,7 +97,7 @@ module.exports = {
 
   async setChannel(interaction) {
     const channel = interaction.options.getChannel('채널');
-    setPatchChannel(interaction.guild.id, channel.id);
+    await setPatchChannel(interaction.guild.id, channel.id);
 
     await interaction.reply({
       embeds: [
@@ -115,7 +115,7 @@ module.exports = {
   },
 
   async removeChannel(interaction) {
-    const channelId = getPatchChannel(interaction.guild.id);
+    const channelId = await getPatchChannel(interaction.guild.id);
 
     if (!channelId) {
       return interaction.reply({
@@ -124,7 +124,7 @@ module.exports = {
       });
     }
 
-    removePatchChannel(interaction.guild.id);
+    await removePatchChannel(interaction.guild.id);
     await interaction.reply({
       content: '✅ TFT 패치노트 자동 알림이 해제되었습니다.',
       ephemeral: true,
@@ -132,8 +132,8 @@ module.exports = {
   },
 
   async getStatus(interaction) {
-    const lastPatch = loadLastPatch();
-    const channelId = getPatchChannel(interaction.guild.id);
+    const lastPatch = await loadLastPatch();
+    const channelId = await getPatchChannel(interaction.guild.id);
 
     await interaction.reply({
       embeds: [

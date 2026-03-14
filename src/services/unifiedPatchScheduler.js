@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
+const { pool } = require('../db');
 
 const lolCrawler = require('./patchCrawler');
 const valorantCrawler = require('./valorantCrawler');
@@ -26,7 +27,7 @@ const PATCH_DATA_FILE = path.join(DATA_DIR, 'patch.json');
 const GAME_CONFIGS = {
   lol: {
     name: '롤',
-    channelsFile: path.join(DATA_DIR, 'patchChannels.json'),
+    gameKey: 'lol',
     crawler: lolCrawler,
     summarize: summarizePatchNotes,
     format: formatForDiscord,
@@ -36,7 +37,7 @@ const GAME_CONFIGS = {
   },
   valorant: {
     name: '발로란트',
-    channelsFile: path.join(DATA_DIR, 'valorantPatchChannels.json'),
+    gameKey: 'valorant',
     crawler: valorantCrawler,
     summarize: summarizeValorantPatchNotes,
     format: formatValorantForDiscord,
@@ -46,7 +47,7 @@ const GAME_CONFIGS = {
   },
   tft: {
     name: 'TFT',
-    channelsFile: path.join(DATA_DIR, 'tftPatchChannels.json'),
+    gameKey: 'tft',
     crawler: tftCrawler,
     summarize: summarizeTftPatchNotes,
     format: formatTftForDiscord,
@@ -57,27 +58,55 @@ const GAME_CONFIGS = {
 };
 
 // ============================================
-// 채널 데이터 관리 (공통)
+// 채널 데이터 관리 (PostgreSQL)
 // ============================================
-function loadChannels(channelsFile) {
+async function loadChannels(gameKey) {
   try {
-    if (fs.existsSync(channelsFile)) {
-      return JSON.parse(fs.readFileSync(channelsFile, 'utf-8'));
+    const { rows } = await pool.query(
+      'SELECT guild_id, channel_id FROM patch_channels WHERE game = $1',
+      [gameKey]
+    );
+    const data = {};
+    for (const row of rows) {
+      data[row.guild_id] = { channelId: row.channel_id };
     }
+    return data;
   } catch (err) {
-    console.error('패치 채널 데이터 로드 오류:', err);
+    console.error('패치 채널 데이터 로드 오류:', err.message);
+    return {};
   }
-  return {};
 }
 
-function saveChannels(channelsFile, data) {
-  try {
-    const dir = path.dirname(channelsFile);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(channelsFile, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error('패치 채널 데이터 저장 오류:', err);
-  }
+async function saveChannel(gameKey, guildId, channelId) {
+  await pool.query(
+    `INSERT INTO patch_channels (guild_id, game, channel_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (guild_id, game) DO UPDATE SET channel_id = $3, set_at = NOW()`,
+    [guildId, gameKey, channelId]
+  );
+}
+
+async function removeChannel(gameKey, guildId) {
+  await pool.query(
+    'DELETE FROM patch_channels WHERE guild_id = $1 AND game = $2',
+    [guildId, gameKey]
+  );
+}
+
+async function getChannel(gameKey, guildId) {
+  const { rows } = await pool.query(
+    'SELECT channel_id FROM patch_channels WHERE guild_id = $1 AND game = $2',
+    [guildId, gameKey]
+  );
+  return rows[0]?.channel_id || null;
+}
+
+async function getAllChannels(gameKey) {
+  const { rows } = await pool.query(
+    'SELECT guild_id, channel_id FROM patch_channels WHERE game = $1',
+    [gameKey]
+  );
+  return rows.map((r) => ({ guildId: r.guild_id, channelId: r.channel_id }));
 }
 
 // ============================================
@@ -87,25 +116,17 @@ function makeGameApi(gameKey) {
   const config = GAME_CONFIGS[gameKey];
 
   return {
-    // 채널 관리
-    setPatchChannel(guildId, channelId) {
-      const data = loadChannels(config.channelsFile);
-      data[guildId] = { channelId, setAt: new Date().toISOString() };
-      saveChannels(config.channelsFile, data);
+    async setPatchChannel(guildId, channelId) {
+      await saveChannel(gameKey, guildId, channelId);
     },
-    removePatchChannel(guildId) {
-      const data = loadChannels(config.channelsFile);
-      delete data[guildId];
-      saveChannels(config.channelsFile, data);
+    async removePatchChannel(guildId) {
+      await removeChannel(gameKey, guildId);
     },
-    getPatchChannel(guildId) {
-      return loadChannels(config.channelsFile)[guildId]?.channelId || null;
+    async getPatchChannel(guildId) {
+      return getChannel(gameKey, guildId);
     },
-    getAllPatchChannels() {
-      return Object.entries(loadChannels(config.channelsFile)).map(([guildId, info]) => ({
-        guildId,
-        channelId: info.channelId,
-      }));
+    async getAllPatchChannels() {
+      return getAllChannels(gameKey);
     },
 
     // 크롤러 위임 (커맨드에서 사용)
@@ -152,15 +173,14 @@ async function syncCurrentPatch(gameKey) {
       console.log(`⚠️ ${config.name} 패치노트 URL을 가져올 수 없어 동기화 스킵`);
       return;
     }
-    const lastPatch = config.crawler.loadLastPatch();
+    const lastPatch = await config.crawler.loadLastPatch();
     if (lastPatch.lastUrl === latest.url) {
       console.log(`📋 ${config.name} 패치 기록 최신 상태: ${lastPatch.lastTitle || latest.url}`);
       return;
     }
-    config.crawler.saveLastPatch({
+    await config.crawler.saveLastPatch({
       lastUrl: latest.url,
       lastTitle: latest.title || config.defaultTitle,
-      checkedAt: new Date().toISOString(),
     });
     console.log(`📋 ${config.name} 현재 패치 기록 완료: ${latest.title || latest.url} (알림 없음)`);
   } catch (err) {
@@ -239,7 +259,7 @@ async function checkAndNotifyGame(client, gameKey) {
       }
     }
 
-    const channels = gameApi.getAllPatchChannels();
+    const channels = await gameApi.getAllPatchChannels();
     let successCount = 0;
     let failCount = 0;
 
@@ -270,26 +290,14 @@ async function checkAndNotifyGame(client, gameKey) {
 let scheduledTask = null;
 
 async function startUnifiedPatchScheduler(client) {
-  // LoL 레거시 채널 마이그레이션 (.env의 LOL_PATCH_CHANNEL_ID)
-  const legacyChannelId = process.env.LOL_PATCH_CHANNEL_ID;
-  if (legacyChannelId) {
-    const existing = loadChannels(GAME_CONFIGS.lol.channelsFile);
-    const alreadyMigrated = Object.values(existing).some(
-      (info) => info.channelId === legacyChannelId
-    );
-    if (!alreadyMigrated) {
-      const channel = client.channels.cache.get(legacyChannelId);
-      if (channel?.guild) {
-        lol.setPatchChannel(channel.guild.id, legacyChannelId);
-        console.log(`📦 기존 패치 채널 마이그레이션: ${channel.guild.name} → #${channel.name}`);
-      }
-    }
-  }
-
   // 등록된 서버 수 로그
-  const lolCount = lol.getAllPatchChannels().length;
-  const valorantCount = valorant.getAllPatchChannels().length;
-  const tftCount = tft.getAllPatchChannels().length;
+  const lolChannels = await lol.getAllPatchChannels();
+  const valorantChannels = await valorant.getAllPatchChannels();
+  const tftChannels = await tft.getAllPatchChannels();
+
+  const lolCount = lolChannels.length;
+  const valorantCount = valorantChannels.length;
+  const tftCount = tftChannels.length;
 
   if (lolCount + valorantCount + tftCount === 0) {
     console.log('⚠️ 패치노트 알림 채널이 설정된 서버가 없습니다.');

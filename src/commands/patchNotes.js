@@ -107,7 +107,7 @@ module.exports = {
     const channel = interaction.options.getChannel('채널');
 
     // 서버별로 JSON에 저장
-    setPatchChannel(interaction.guild.id, channel.id);
+    await setPatchChannel(interaction.guild.id, channel.id);
 
     const embed = new EmbedBuilder()
       .setTitle('✅ 패치노트 알림 채널 설정 완료')
@@ -125,7 +125,7 @@ module.exports = {
   // 🔇 패치 알림 해제
   // ============================================
   async removeChannel(interaction) {
-    const channelId = getPatchChannel(interaction.guild.id);
+    const channelId = await getPatchChannel(interaction.guild.id);
 
     if (!channelId) {
       return interaction.reply({
@@ -134,7 +134,7 @@ module.exports = {
       });
     }
 
-    removePatchChannel(interaction.guild.id);
+    await removePatchChannel(interaction.guild.id);
 
     await interaction.reply({
       content: '✅ 패치노트 자동 알림이 해제되었습니다.',
@@ -146,8 +146,8 @@ module.exports = {
   // 📊 상태 확인
   // ============================================
   async getStatus(interaction) {
-    const lastPatch = loadLastPatch();
-    const channelId = getPatchChannel(interaction.guild.id);
+    const lastPatch = await loadLastPatch();
+    const channelId = await getPatchChannel(interaction.guild.id);
 
     const embed = new EmbedBuilder()
       .setTitle('📊 패치노트 알림 상태')

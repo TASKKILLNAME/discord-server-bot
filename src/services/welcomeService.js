@@ -9,12 +9,12 @@ const {
 // 🎮 게임 역할 목록 (ID 기반으로 안정적 매칭)
 // ============================================
 const GAME_ROLES = [
-  { id: '1462734611527499838', name: 'LOL',      label: '🎮 League of Legends', emoji: '🎮' },
-  { id: '1462734448901492843', name: 'valorant', label: '🔫 VALORANT',           emoji: '🔫' },
-  { id: '1462734548008697856', name: 'apex',     label: '🏹 Apex Legends',       emoji: '🏹' },
-  { id: '1462736830981210225', name: 'pubg',     label: '🪖 배틀그라운드',        emoji: '🪖' },
-  { id: '1468235099454832774', name: 'rainbow6', label: '🛡️ Rainbow Six Siege', emoji: '🛡️' },
-  { id: '1482258801242669137', name: 'tarkov',   label: '🔫 Escape from Tarkov', emoji: '🎯' },
+  { id: '1462734611527499838', name: 'LOL',      label: '🎮 League of Legends',       emoji: '🎮' },
+  { id: '1462734448901492843', name: 'valorant', label: '🔫 VALORANT',                emoji: '🔫' },
+  { id: '1462734548008697856', name: 'apex',     label: '🏹 Apex Legends',            emoji: '🏹' },
+  { id: '1462736830981210225', name: 'pubg',     label: '🪖 배틀그라운드',              emoji: '🪖' },
+  { id: '1468235099454832774', name: 'rainbow6', label: '🛡️ Rainbow Six Siege',      emoji: '🛡️' },
+  { id: '1482258801242669137', name: 'tarkov',   label: '🎯 Escape from Tarkov',      emoji: '🎯' },
 ];
 
 // ============================================

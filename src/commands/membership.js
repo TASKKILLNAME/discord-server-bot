@@ -45,7 +45,7 @@ module.exports = {
       .setDescription(
         '원하는 멤버십 티어를 선택해주세요.\n' +
           '구매 요청 후 관리자가 입금 확인하면 크레딧이 충전됩니다.\n\n' +
-          `현재 잔여 크레딧: **${getCredits(interaction.guild.id, interaction.user.id)}회**`
+          `현재 잔여 크레딧: **${await getCredits(interaction.guild.id, interaction.user.id)}회**`
       )
       .addFields(
         { name: '🥉 브론즈', value: '**1,000원** — 8회', inline: true },
@@ -180,7 +180,7 @@ module.exports = {
     }
 
     // 크레딧 충전
-    const result = chargeCredits(guildId, userId, tier.credits, tier.name, interaction.user.id);
+    const result = await chargeCredits(guildId, userId, tier.credits, tier.name, interaction.user.id);
 
     // 유저에게 DM 알림
     try {
@@ -285,7 +285,7 @@ module.exports = {
   // 📊 멤버십 정보
   // ============================================
   async info(interaction) {
-    const info = getMembershipInfo(interaction.guild.id, interaction.user.id);
+    const info = await getMembershipInfo(interaction.guild.id, interaction.user.id);
 
     if (!info) {
       return interaction.reply({
@@ -298,7 +298,7 @@ module.exports = {
       .filter((h) => h.type === 'use')
       .slice(-10)
       .reverse()
-      .map((h) => `• ${h.action} (${new Date(h.at).toLocaleDateString('ko-KR')})`)
+      .map((h) => `• ${h.action} (${new Date(h.at || h.created_at).toLocaleDateString('ko-KR')})`)
       .join('\n') || '사용 내역 없음';
 
     const embed = new EmbedBuilder()

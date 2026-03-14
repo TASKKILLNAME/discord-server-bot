@@ -16,6 +16,7 @@ const { handleMemberJoin, handleGameSelect } = require('./services/welcomeServic
 const { addXp, createLevelUpEmbed } = require('./services/levelService');
 const { startLolTracker } = require('./services/lolTrackerService');
 const { initDb } = require('./db');
+const { handleVoiceStateUpdate, cleanupTempChannels } = require('./services/tempVoiceService');
 
 // ============================================
 // 클라이언트 설정
@@ -75,6 +76,9 @@ client.once(Events.ClientReady, async (c) => {
 
   // 롤 게임 자동 감지 트래커 시작
   startLolTracker(client);
+
+  // 임시 음성채널 정리 (봇 재시작 시)
+  await cleanupTempChannels(client);
 });
 
 // ============================================
@@ -217,6 +221,17 @@ client.on(Events.MessageCreate, async (message) => {
     }
   } catch (error) {
     console.error('XP 처리 오류:', error);
+  }
+});
+
+// ============================================
+// 음성 채널 이벤트 (임시 방 생성/삭제)
+// ============================================
+client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  try {
+    await handleVoiceStateUpdate(oldState, newState);
+  } catch (error) {
+    console.error('음성 상태 업데이트 오류:', error);
   }
 });
 
