@@ -402,6 +402,109 @@ function formatValorantForDiscord(summary, patchData) {
   };
 }
 
+// ============================================
+// 타르코프 패치노트 요약
+// ============================================
+
+async function summarizeTarkovPatchNotes(patchData) {
+  const anthropic = getClient();
+  if (!anthropic) {
+    return getFallbackSummary(patchData);
+  }
+
+  try {
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: `다음은 Escape from Tarkov(타르코프) 패치노트 내용입니다. 러시아어인 경우 한국어로 번역해주세요. 아래 형식으로 한국어 요약을 작성해주세요.
+
+**반드시 아래 형식을 지켜주세요:**
+
+## 📋 패치 요약
+(2-3줄로 이번 패치의 핵심 변경사항 요약)
+
+## 🔫 무기/장비 변경
+(무기, 탄약, 장비 변경사항. 없으면 "해당 없음")
+- 이름: 변경 내용 요약
+
+## 🗺️ 맵 변경
+(맵 관련 변경사항. 없으면 "해당 없음")
+
+## 🎯 게임플레이 변경
+(레이드, 퀘스트, 스캐브, PMC 관련 변경. 없으면 "해당 없음")
+
+## 💰 경제/거래 변경
+(플리마켓, 딜러, 가격 변경. 없으면 "해당 없음")
+
+## 🛡️ 안티치트/보안
+(안티치트, 밴 관련. 없으면 "해당 없음")
+
+## 🛠️ 최적화/기술
+(성능 개선, 서버, 네트코드 변경. 없으면 "해당 없음")
+
+## 🐛 버그 수정
+(주요 버그 수정. 없으면 "해당 없음")
+
+**규칙:**
+- 구체적인 수치가 있으면 포함
+- 각 항목은 1-2줄로 요약
+- 이모지를 적절히 활용
+- 러시아어 원문은 반드시 한국어로 번역
+
+패치노트 내용:
+${patchData.content}`,
+        },
+      ],
+    });
+
+    return message.content[0].text;
+  } catch (err) {
+    console.error('타르코프 AI 요약 실패:', err.message);
+    return getFallbackSummary(patchData);
+  }
+}
+
+function formatTarkovForDiscord(summary, patchData) {
+  const sections = [];
+  const lines = summary.split('\n');
+  let currentSection = { title: '', content: '' };
+
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (currentSection.title) sections.push({ ...currentSection });
+      currentSection = { title: line.replace('## ', '').trim(), content: '' };
+    } else if (line.trim()) {
+      currentSection.content += line + '\n';
+    }
+  }
+  if (currentSection.title) sections.push(currentSection);
+
+  const fields = sections
+    .filter((s) => s.content.trim())
+    .map((s) => ({
+      name: s.title,
+      value:
+        s.content.trim().length > 1024
+          ? s.content.trim().substring(0, 1021) + '...'
+          : s.content.trim(),
+    }));
+
+  return {
+    title: `🎮 ${patchData.title}`,
+    url: patchData.url,
+    fields,
+    color: 0x1a1a1a, // 타르코프 다크 컬러
+    timestamp: new Date().toISOString(),
+    footer: { text: '🤖 AI 요약 | 자세한 내용은 원문 확인' },
+    thumbnail: {
+      url: 'https://upload.wikimedia.org/wikipedia/en/thumb/2/28/Escape_from_Tarkov_logo.png/250px-Escape_from_Tarkov_logo.png',
+    },
+  };
+}
+
 module.exports = {
   summarizePatchNotes,
   formatForDiscord,
@@ -410,4 +513,6 @@ module.exports = {
   formatTftForDiscord,
   summarizeValorantPatchNotes,
   formatValorantForDiscord,
+  summarizeTarkovPatchNotes,
+  formatTarkovForDiscord,
 };

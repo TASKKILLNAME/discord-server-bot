@@ -18,6 +18,7 @@ const { startLolTracker } = require('./services/lolTrackerService');
 const { initDb } = require('./db');
 const { handleVoiceStateUpdate, cleanupTempChannels } = require('./services/tempVoiceService');
 const { handleVoteButton } = require('./services/voteService');
+const { startTracker } = require('./services/activityTrackerService');
 
 // ============================================
 // 클라이언트 설정
@@ -28,6 +29,8 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildPresences,
   ],
 });
 
@@ -77,6 +80,9 @@ client.once(Events.ClientReady, async (c) => {
 
   // 롤 게임 자동 감지 트래커 시작
   startLolTracker(client);
+
+  // 실시간 활동 감시
+  startTracker(client);
 
   // 임시 음성채널 정리 (봇 재시작 시)
   await cleanupTempChannels(client);

@@ -7,6 +7,7 @@ const { pool } = require('../db');
 const lolCrawler = require('./patchCrawler');
 const valorantCrawler = require('./valorantCrawler');
 const tftCrawler = require('./tftCrawler');
+const tarkovCrawler = require('./tarkovCrawler');
 
 const {
   summarizePatchNotes,
@@ -16,6 +17,8 @@ const {
   formatTftForDiscord,
   summarizeValorantPatchNotes,
   formatValorantForDiscord,
+  summarizeTarkovPatchNotes,
+  formatTarkovForDiscord,
 } = require('./aiSummarizer');
 
 const DATA_DIR = path.join(__dirname, '../../data');
@@ -54,6 +57,16 @@ const GAME_CONFIGS = {
     alertTitle: '🔔 새로운 TFT 패치노트가 발표되었습니다!',
     alertColor: 0xc89b3c,
     defaultTitle: 'TFT 패치노트',
+  },
+  tarkov: {
+    name: '타르코프',
+    gameKey: 'tarkov',
+    crawler: tarkovCrawler,
+    summarize: summarizeTarkovPatchNotes,
+    format: formatTarkovForDiscord,
+    alertTitle: '🔔 새로운 타르코프 패치노트가 발표되었습니다!',
+    alertColor: 0x1a1a1a,
+    defaultTitle: '타르코프 패치노트',
   },
 };
 
@@ -159,8 +172,9 @@ function makeGameApi(gameKey) {
 const lol = makeGameApi('lol');
 const valorant = makeGameApi('valorant');
 const tft = makeGameApi('tft');
+const tarkov = makeGameApi('tarkov');
 
-const GAME_APIS = { lol, valorant, tft };
+const GAME_APIS = { lol, valorant, tft, tarkov };
 
 // ============================================
 // 스케줄러 내부 함수
@@ -294,16 +308,18 @@ async function startUnifiedPatchScheduler(client) {
   const lolChannels = await lol.getAllPatchChannels();
   const valorantChannels = await valorant.getAllPatchChannels();
   const tftChannels = await tft.getAllPatchChannels();
+  const tarkovChannels = await tarkov.getAllPatchChannels();
 
   const lolCount = lolChannels.length;
   const valorantCount = valorantChannels.length;
   const tftCount = tftChannels.length;
+  const tarkovCount = tarkovChannels.length;
 
-  if (lolCount + valorantCount + tftCount === 0) {
+  if (lolCount + valorantCount + tftCount + tarkovCount === 0) {
     console.log('⚠️ 패치노트 알림 채널이 설정된 서버가 없습니다.');
   } else {
     console.log(`🔄 통합 패치노트 스케줄러 시작 (30분 간격)`);
-    console.log(`   롤: ${lolCount}개 | 발로란트: ${valorantCount}개 | TFT: ${tftCount}개 서버`);
+    console.log(`   롤: ${lolCount}개 | 발로란트: ${valorantCount}개 | TFT: ${tftCount}개 | 타르코프: ${tarkovCount}개 서버`);
   }
 
   // 시작 전 전체 동기화 (알림 없음, 재시작 시 중복 알림 방지)
@@ -312,15 +328,17 @@ async function startUnifiedPatchScheduler(client) {
     syncCurrentPatch('lol'),
     syncCurrentPatch('valorant'),
     syncCurrentPatch('tft'),
+    syncCurrentPatch('tarkov'),
   ]);
 
-  // 단일 cron으로 3개 게임 동시 체크
+  // 단일 cron으로 4개 게임 동시 체크
   scheduledTask = cron.schedule('*/30 * * * *', async () => {
-    console.log(`\n⏰ [${new Date().toLocaleString('ko-KR')}] 패치노트 체크 중 (롤/발로란트/TFT)...`);
+    console.log(`\n⏰ [${new Date().toLocaleString('ko-KR')}] 패치노트 체크 중 (롤/발로란트/TFT/타르코프)...`);
     await Promise.all([
       checkAndNotifyGame(client, 'lol'),
       checkAndNotifyGame(client, 'valorant'),
       checkAndNotifyGame(client, 'tft'),
+      checkAndNotifyGame(client, 'tarkov'),
     ]);
   });
 }
@@ -338,4 +356,5 @@ module.exports = {
   lol,
   valorant,
   tft,
+  tarkov,
 };

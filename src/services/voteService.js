@@ -1,15 +1,101 @@
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+
 // 투표 데이터 (메모리 기반)
-// key: messageId → { votes: Map<userId, candidateIndex>, candidates: string[] }
+// key: messageId → { votes: Map<userId, candidateIndex>, candidates: string[], timer, channel, closed }
 const activeVotes = new Map();
 
+const VOTE_DURATION = 60 * 60 * 1000; // 1시간
+
 /**
- * 투표 메시지 등록
+ * 투표 메시지 등록 + 1시간 후 자동 마감 타이머
  */
-function registerVote(messageId, candidates) {
+function registerVote(messageId, candidates, channel) {
+  const timer = channel
+    ? setTimeout(() => closeVote(messageId), VOTE_DURATION)
+    : null;
+
   activeVotes.set(messageId, {
     candidates,
     votes: new Map(),
+    channel,
+    timer,
+    closed: false,
   });
+}
+
+/**
+ * 투표 마감 처리
+ */
+async function closeVote(messageId) {
+  const voteData = activeVotes.get(messageId);
+  if (!voteData || voteData.closed) return;
+  voteData.closed = true;
+
+  // 타이머 정리
+  if (voteData.timer) {
+    clearTimeout(voteData.timer);
+    voteData.timer = null;
+  }
+
+  // 결과 집계
+  const counts = {};
+  for (const candidate of voteData.candidates) {
+    counts[candidate] = 0;
+  }
+  for (const index of voteData.votes.values()) {
+    counts[voteData.candidates[index]]++;
+  }
+
+  // 최다 득표 찾기
+  const maxVotes = Math.max(...Object.values(counts));
+  const winners = Object.entries(counts)
+    .filter(([, count]) => count === maxVotes)
+    .map(([name]) => name);
+
+  // 결과 텍스트
+  const resultLines = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => {
+      const bar = '█'.repeat(count) + '░'.repeat(Math.max(0, 5 - count));
+      const isWinner = winners.includes(name) && maxVotes > 0;
+      return `${isWinner ? '👑' : '　'} **${name}** ${bar} ${count}표`;
+    })
+    .join('\n');
+
+  const totalVotes = voteData.votes.size;
+
+  let winnerText;
+  if (maxVotes === 0) {
+    winnerText = '아무도 투표하지 않았습니다!';
+  } else if (winners.length > 1) {
+    winnerText = `🎲 동점! **${winners.join(', ')}** (${maxVotes}표) — 추첨이 필요합니다!`;
+  } else {
+    winnerText = `🎉 **${winners[0]}** 당선! (${maxVotes}표)`;
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('🗳️ 투표 결과')
+    .setDescription(`${resultLines}\n\n${winnerText}`)
+    .setFooter({ text: `총 ${totalVotes}명 참여` })
+    .setColor(0xFFD700)
+    .setTimestamp();
+
+  // 원본 메시지 버튼 비활성화
+  if (voteData.channel) {
+    try {
+      const message = await voteData.channel.messages.fetch(messageId);
+      const disabledRows = message.components.map((row) => {
+        const newRow = ActionRowBuilder.from(row);
+        newRow.components.forEach((btn) => btn.setDisabled(true));
+        return newRow;
+      });
+      await message.edit({ components: disabledRows });
+    } catch {}
+
+    await voteData.channel.send({ embeds: [embed] });
+  }
+
+  activeVotes.delete(messageId);
 }
 
 /**
@@ -25,6 +111,13 @@ async function handleVoteButton(interaction) {
     for (const row of interaction.message.components) {
       for (const btn of row.components) {
         if (btn.customId?.startsWith('vote_')) {
+          // 비활성화된 버튼이면 이미 마감
+          if (btn.disabled) {
+            return interaction.reply({
+              content: '❌ 이 투표는 이미 마감되었습니다.',
+              ephemeral: true,
+            });
+          }
           candidates.push(btn.label);
         }
       }
@@ -35,8 +128,15 @@ async function handleVoteButton(interaction) {
         ephemeral: true,
       });
     }
-    registerVote(messageId, candidates);
+    registerVote(messageId, candidates, interaction.channel);
     voteData = activeVotes.get(messageId);
+  }
+
+  if (voteData.closed) {
+    return interaction.reply({
+      content: '❌ 이 투표는 이미 마감되었습니다.',
+      ephemeral: true,
+    });
   }
 
   const index = parseInt(interaction.customId.replace('vote_', ''), 10);
@@ -89,4 +189,5 @@ module.exports = {
   registerVote,
   handleVoteButton,
   getVoteResults,
+  closeVote,
 };

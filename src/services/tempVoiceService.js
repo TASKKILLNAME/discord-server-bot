@@ -7,6 +7,16 @@ const activeTempChannels = new Map();
 // 트리거 채널 이름 (이 이름의 음성채널에 입장하면 방 생성)
 const TRIGGER_NAME = '➕ 방 만들기';
 
+// 카테고리명 → 방장 역할명 매핑
+const CATEGORY_LEADER_MAP = {
+  'LOL':       'LOL 방장',
+  '발로란트':  '발로란트 방장',
+  'APEX':      'apex 방장',
+  'PUBG':      'pubg 방장',
+  'RAINBOW6':  'rainbow6 방장',
+  'TARKOV':    'tarkov 방장',
+};
+
 /**
  * voiceStateUpdate 이벤트 핸들러
  */
@@ -20,15 +30,18 @@ async function handleVoiceStateUpdate(oldState, newState) {
   }
 
   // ── 퇴장: 임시 채널 비었으면 15초 후 삭제 (재접속 대비) ──
-  if (oldState.channel && activeTempChannels.has(oldState.channelId)) {
-    if (oldState.channel.members.size === 0) {
+  if (oldState.channel && oldState.channel.members.size === 0) {
+    const isTempByMap = activeTempChannels.has(oldState.channelId);
+    const isTempByName = oldState.channel.name.startsWith('🔊 ') &&
+      (oldState.channel.name.includes('님의 방') || oldState.channel.name.includes('의 '));
+
+    if (isTempByMap || isTempByName) {
       const channelId = oldState.channelId;
       const channel = oldState.channel;
       setTimeout(async () => {
         try {
-          // 15초 후 다시 확인 (누가 들어왔을 수 있음)
           const refreshed = channel.guild.channels.cache.get(channelId);
-          if (refreshed && refreshed.members.size === 0 && activeTempChannels.has(channelId)) {
+          if (refreshed && refreshed.members.size === 0) {
             await deleteTempChannel(refreshed);
           }
         } catch (e) {}
@@ -62,6 +75,28 @@ async function createTempChannel(voiceState) {
       ? `🔊 ${member.displayName}의 ${gameName}`
       : `🔊 ${member.displayName}님의 방`;
 
+    // 해당 카테고리의 방장 역할 찾기
+    const leaderOverwrites = [];
+    const categoryKey = Object.keys(CATEGORY_LEADER_MAP).find(
+      key => categoryName.toUpperCase().includes(key.toUpperCase())
+    );
+    if (categoryKey) {
+      const leaderRoleName = CATEGORY_LEADER_MAP[categoryKey];
+      const leaderRole = guild.roles.cache.find(r => r.name === leaderRoleName);
+      if (leaderRole) {
+        leaderOverwrites.push({
+          id: leaderRole.id,
+          allow: [
+            PermissionFlagsBits.MoveMembers,     // 멤버 이동
+            PermissionFlagsBits.MuteMembers,     // 음소거
+            PermissionFlagsBits.DeafenMembers,   // 귀막기
+            PermissionFlagsBits.Connect,
+            PermissionFlagsBits.Speak,
+          ],
+        });
+      }
+    }
+
     // 임시 채널 생성 (트리거 채널과 같은 카테고리)
     const tempChannel = await guild.channels.create({
       name: channelName,
@@ -69,7 +104,7 @@ async function createTempChannel(voiceState) {
       parent: channel.parentId,
       bitrate: 64000,
       permissionOverwrites: [
-        // 방장 권한
+        // 방 만든 사람 권한
         {
           id: member.id,
           allow: [
@@ -81,7 +116,8 @@ async function createTempChannel(voiceState) {
             PermissionFlagsBits.Speak,
           ],
         },
-        // 기존 카테고리 권한 상속 (부모 카테고리에서)
+        // 게임 방장 역할 권한 (관리자보다 낮음 — ManageChannels 없음)
+        ...leaderOverwrites,
       ],
       reason: `임시 음성채널 (${member.user.tag})`,
     });
