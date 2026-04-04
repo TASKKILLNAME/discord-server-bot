@@ -25,6 +25,11 @@ const {
   removeTrackerRole,
 } = require('../services/lolTrackerService');
 const { hasCredit, useCredit, getCredits } = require('../services/membershipService');
+const {
+  buildRecentMatchLayout,
+  buildLiveGameLayout,
+  buildSingleMatchLayout,
+} = require('../services/matchLayoutService');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -328,30 +333,8 @@ module.exports = {
         // ✅ AI 분석 성공 → 크레딧 차감
         await useCredit(interaction.guild.id, interaction.user.id, '실시간 분석 (최근게임 대체)');
 
-        const m = matchData.matches[0];
-        const resultEmbed = new EmbedBuilder()
-          .setTitle(`📊 ${gameName}#${tagLine} — 최근 게임`)
-          .addFields(
-            { name: '🏆 랭크', value: matchData.rank, inline: true },
-            { name: '📈 레벨', value: `${matchData.summonerLevel}`, inline: true },
-            {
-              name: `${m.win ? '✅ 승리' : '❌ 패배'} | ${m.champion}`,
-              value: `${m.kills}/${m.deaths}/${m.assists} (KDA ${m.kda}) | CS ${m.cs} | ${m.duration}`,
-            }
-          )
-          .setColor(m.win ? 0x57f287 : 0xed4245)
-          .setTimestamp();
-
-        const analysisEmbed = new EmbedBuilder()
-          .setTitle('🤖 AI 분석')
-          .setColor(0xf0b232)
-          .setFooter({ text: 'AI 분석 | 실제 결과와 다를 수 있습니다' })
-          .setTimestamp();
-        for (const f of fields.slice(0, 25)) {
-          analysisEmbed.addFields(f);
-        }
-
-        return interaction.editReply({ embeds: [resultEmbed, analysisEmbed] });
+        const layout = buildSingleMatchLayout(matchData, fields, gameName, tagLine);
+        return interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
       }
 
       // 실시간 게임 분석
@@ -361,41 +344,8 @@ module.exports = {
       // ✅ AI 분석 성공 → 크레딧 차감
       await useCredit(interaction.guild.id, interaction.user.id, '실시간 분석');
 
-      const blueDesc = gameData.blueTeam
-        .map((p) => `**${p.championName}** | ${p.rank}\n${p.spell1} / ${p.spell2}`)
-        .join('\n\n');
-
-      const redDesc = gameData.redTeam
-        .map((p) => `**${p.championName}** | ${p.rank}\n${p.spell1} / ${p.spell2}`)
-        .join('\n\n');
-
-      const embeds = [
-        new EmbedBuilder()
-          .setTitle(`🎮 ${gameName}#${tagLine} 실시간 게임`)
-          .addFields({ name: '🎯 게임 모드', value: gameData.gameMode, inline: true })
-          .setColor(0x1a78ae)
-          .setTimestamp(),
-        new EmbedBuilder()
-          .setTitle('🔵 블루팀')
-          .setDescription(blueDesc.substring(0, 4096))
-          .setColor(0x4287f5),
-        new EmbedBuilder()
-          .setTitle('🔴 레드팀')
-          .setDescription(redDesc.substring(0, 4096))
-          .setColor(0xed4245),
-      ];
-
-      const analysisEmbed = new EmbedBuilder()
-        .setTitle('🤖 AI 분석')
-        .setColor(0xf0b232)
-        .setFooter({ text: 'AI 분석 | 실제 결과와 다를 수 있습니다' })
-        .setTimestamp();
-      for (const f of analysisFields.slice(0, 25)) {
-        analysisEmbed.addFields(f);
-      }
-      embeds.push(analysisEmbed);
-
-      await interaction.editReply({ embeds });
+      const layout = buildLiveGameLayout(gameData, analysisFields, gameName, tagLine);
+      await interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
     } catch (err) {
       console.error('실시간 조회 오류:', err);
       const errorDetail = err.userMessage || err.message || '알 수 없는 오류';
@@ -468,51 +418,8 @@ module.exports = {
       // ✅ AI 분석 성공 → 크레딧 차감
       await useCredit(interaction.guild.id, interaction.user.id, '최근전적 분석');
 
-      // 프로필 임베드
-      const wins = matchData.matches.filter((m) => m.win).length;
-      const losses = matchData.matches.length - wins;
-
-      const profileEmbed = new EmbedBuilder()
-        .setTitle(`📊 ${gameName}#${tagLine} 전적 분석`)
-        .addFields(
-          { name: '🏆 랭크', value: matchData.rank, inline: true },
-          { name: '📈 레벨', value: `${matchData.summonerLevel}`, inline: true },
-          {
-            name: `📊 최근 ${matchData.matches.length}게임`,
-            value: `${wins}승 ${losses}패 (${Math.round((wins / matchData.matches.length) * 100)}%)`,
-            inline: true,
-          }
-        )
-        .setColor(0x5865f2)
-        .setTimestamp();
-
-      // 매치 목록 임베드
-      const matchList = matchData.matches
-        .map(
-          (m) =>
-            `${m.win ? '✅' : '❌'} **${m.champion}** | ${m.kills}/${m.deaths}/${m.assists} (${m.kda}) | CS ${m.cs} (${m.csPerMin}/분) | ${m.duration}`
-        )
-        .join('\n');
-
-      const matchEmbed = new EmbedBuilder()
-        .setTitle('📋 매치 히스토리')
-        .setDescription(matchList.substring(0, 4096))
-        .setColor(0x1a78ae);
-
-      // AI 분석 임베드
-      const analysisEmbed = new EmbedBuilder()
-        .setTitle('🤖 AI 분석')
-        .setColor(0xf0b232)
-        .setFooter({ text: 'AI 분석 | 실제 결과와 다를 수 있습니다' })
-        .setTimestamp();
-
-      for (const f of analysisFields.slice(0, 25)) {
-        analysisEmbed.addFields(f);
-      }
-
-      await interaction.editReply({
-        embeds: [profileEmbed, matchEmbed, analysisEmbed],
-      });
+      const layout = buildRecentMatchLayout(matchData, analysisFields);
+      await interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
     } catch (err) {
       console.error('최근 전적 조회 오류:', err);
       const errorDetail = err.userMessage || err.message || '알 수 없는 오류';

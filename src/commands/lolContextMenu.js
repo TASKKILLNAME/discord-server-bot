@@ -16,6 +16,7 @@ const {
 } = require('../services/lolAnalyzer');
 const { hasCredit, useCredit, getCredits } = require('../services/membershipService');
 const { getRegisteredPlayers } = require('../services/lolTrackerService');
+const { buildRecentMatchLayout } = require('../services/matchLayoutService');
 
 module.exports = {
   data: new ContextMenuCommandBuilder()
@@ -113,48 +114,10 @@ module.exports = {
 
       await useCredit(interaction.guild.id, interaction.user.id, '우클릭 전적 검색');
 
-      const wins = matchData.matches.filter((m) => m.win).length;
-      const losses = matchData.matches.length - wins;
-
-      const profileEmbed = new EmbedBuilder()
-        .setTitle(`📊 ${gameName}#${tagLine} 전적 분석`)
-        .setDescription(`<@${targetUser.id}>님의 전적 (우클릭 검색)`)
-        .addFields(
-          { name: '🏆 랭크', value: matchData.rank, inline: true },
-          { name: '📈 레벨', value: `${matchData.summonerLevel}`, inline: true },
-          {
-            name: `📊 최근 ${matchData.matches.length}게임`,
-            value: `${wins}승 ${losses}패 (${Math.round((wins / matchData.matches.length) * 100)}%)`,
-            inline: true,
-          }
-        )
-        .setColor(0x5865f2)
-        .setTimestamp();
-
-      const matchList = matchData.matches
-        .map(
-          (m) =>
-            `${m.win ? '✅' : '❌'} **${m.champion}** | ${m.kills}/${m.deaths}/${m.assists} (${m.kda}) | CS ${m.cs} (${m.csPerMin}/분) | ${m.duration}`
-        )
-        .join('\n');
-
-      const matchEmbed = new EmbedBuilder()
-        .setTitle('📋 매치 히스토리')
-        .setDescription(matchList.substring(0, 4096))
-        .setColor(0x1a78ae);
-
-      const analysisEmbed = new EmbedBuilder()
-        .setTitle('🤖 AI 분석')
-        .setColor(0xf0b232)
-        .setFooter({ text: 'AI 분석 | 우클릭 전적 검색' })
-        .setTimestamp();
-      for (const f of analysisFields.slice(0, 25)) {
-        analysisEmbed.addFields(f);
-      }
-
-      await interaction.editReply({
-        embeds: [profileEmbed, matchEmbed, analysisEmbed],
+      const layout = buildRecentMatchLayout(matchData, analysisFields, {
+        label: `\n-# <@${targetUser.id}>님의 전적 (우클릭 검색)`,
       });
+      await interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
     } catch (err) {
       console.error('우클릭 전적 검색 오류:', err);
       await interaction.editReply({
