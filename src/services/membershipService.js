@@ -1,5 +1,8 @@
 const { pool } = require('../db');
 
+// 크레딧 제한 없는 유저 (봇 오너)
+const UNLIMITED_USERS = new Set([process.env.BOT_OWNER_ID].filter(Boolean));
+
 // ============================================
 // 💰 멤버십 티어 정의
 // ============================================
@@ -48,6 +51,7 @@ async function getMembershipInfo(guildId, userId) {
 // ✅ 크레딧 보유 확인 (차감 없이 체크만)
 // ============================================
 async function hasCredit(guildId, userId) {
+  if (UNLIMITED_USERS.has(userId)) return true;
   const credits = await getCredits(guildId, userId);
   return credits > 0;
 }
@@ -56,6 +60,8 @@ async function hasCredit(guildId, userId) {
 // 🔻 크레딧 사용 (1회 차감)
 // ============================================
 async function useCredit(guildId, userId, action) {
+  if (UNLIMITED_USERS.has(userId)) return true;
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
