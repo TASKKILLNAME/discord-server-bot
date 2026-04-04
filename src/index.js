@@ -92,6 +92,109 @@ client.once(Events.ClientReady, async (c) => {
 // 슬래시 명령어 처리
 // ============================================
 client.on(Events.InteractionCreate, async (interaction) => {
+  // ── Context Menu (우클릭) 처리 ──
+  if (interaction.isUserContextMenuCommand()) {
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
+
+    try {
+      await command.execute(interaction);
+    } catch (error) {
+      console.error(`컨텍스트 메뉴 오류 (${interaction.commandName}):`, error);
+      const msg = { content: '❌ 명령어 실행 중 오류가 발생했습니다.', ephemeral: true };
+      if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
+      else await interaction.reply(msg);
+    }
+    return;
+  }
+
+  // ── Modal Submit 처리 ──
+  if (interaction.isModalSubmit()) {
+    try {
+      // 전적 검색 모달 (우클릭 → 미등록 유저)
+      if (interaction.customId.startsWith('lol_search_modal_')) {
+        const targetUserId = interaction.customId.replace('lol_search_modal_', '');
+        const gameName = interaction.fields.getTextInputValue('summoner_name');
+        const tagLine = interaction.fields.getTextInputValue('summoner_tag');
+
+        const targetUser = await interaction.client.users.fetch(targetUserId);
+        const contextMenuCmd = client.commands.get('전적 검색');
+        if (contextMenuCmd?.searchDirect) {
+          await contextMenuCmd.searchDirect(interaction, gameName, tagLine, targetUser);
+        }
+      }
+
+      // 빠른 이벤트 모달
+      if (interaction.customId === 'quick_event_modal') {
+        const title = interaction.fields.getTextInputValue('event_title');
+        const dateStr = interaction.fields.getTextInputValue('event_date');
+        const timeStr = interaction.fields.getTextInputValue('event_time');
+        const description = interaction.fields.getTextInputValue('event_desc') || '';
+
+        const datetime = new Date(`${dateStr}T${timeStr}:00+09:00`);
+        if (isNaN(datetime.getTime())) {
+          return interaction.reply({
+            content: '❌ 날짜/시간 형식이 올바르지 않습니다.\n예: 날짜 `2026-04-10` 시간 `20:00`',
+            ephemeral: true,
+          });
+        }
+        if (datetime < new Date()) {
+          return interaction.reply({
+            content: '❌ 과거 시간으로는 이벤트를 생성할 수 없습니다.',
+            ephemeral: true,
+          });
+        }
+
+        await interaction.deferReply();
+
+        const { createEvent, createEventEmbed } = require('./services/eventService');
+        const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+
+        const event = createEvent({
+          guildId: interaction.guild.id,
+          channelId: interaction.channel.id,
+          messageId: null,
+          creatorId: interaction.user.id,
+          creatorName: interaction.member.displayName,
+          title,
+          description,
+          datetime: datetime.toISOString(),
+          repeat: 'none',
+        });
+
+        const embed = createEventEmbed(event);
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`event_join_${event.id}`)
+            .setLabel('✅ 참가 / 취소')
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setCustomId(`event_list_${event.id}`)
+            .setLabel('📋 참가자 목록')
+            .setStyle(ButtonStyle.Secondary),
+        );
+
+        const reply = await interaction.editReply({ embeds: [embed], components: [row] });
+
+        // messageId 업데이트
+        const events = require('./services/eventService').loadEvents();
+        if (events[event.id]) {
+          events[event.id].messageId = reply.id;
+          require('fs').writeFileSync(
+            require('path').join(__dirname, '../data/events.json'),
+            JSON.stringify(events, null, 2)
+          );
+        }
+      }
+    } catch (error) {
+      console.error('모달 처리 오류:', error);
+      const msg = { content: '❌ 처리 중 오류가 발생했습니다.', ephemeral: true };
+      if (interaction.replied || interaction.deferred) await interaction.followUp(msg);
+      else await interaction.reply(msg);
+    }
+    return;
+  }
+
   // 슬래시 명령어 처리
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
