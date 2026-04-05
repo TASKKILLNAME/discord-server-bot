@@ -15,6 +15,7 @@ const CATEGORY_LEADER_MAP = {
   'PUBG':      'pubg 방장',
   'RAINBOW6':  'rainbow6 방장',
   'TARKOV':    'tarkov 방장',
+  '림버스':    '림버스 방장',
 };
 
 /**
