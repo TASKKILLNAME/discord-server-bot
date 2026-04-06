@@ -8,6 +8,9 @@ const {
   TextDisplayBuilder,
   SeparatorBuilder,
   SeparatorSpacingSize,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  FileUploadBuilder,
   MessageFlags,
 } = require('discord.js');
 const { getProfile, upsertProfile, deleteProfile, getRanking } = require('../services/limbusService');
@@ -106,12 +109,16 @@ module.exports = {
       .setMaxLength(200)
       .setValue(existing?.note || '');
 
+    const screenshotInput = new FileUploadBuilder()
+      .setCustomId('screenshot')
+      .setRequired(false);
+
     modal.addComponents(
       new ActionRowBuilder().addComponents(chapterInput),
       new ActionRowBuilder().addComponents(mirrorInput),
       new ActionRowBuilder().addComponents(countsInput),
       new ActionRowBuilder().addComponents(mainInput),
-      new ActionRowBuilder().addComponents(noteInput),
+      new ActionRowBuilder().addComponents(screenshotInput),
     );
 
     await interaction.showModal(modal);
@@ -251,6 +258,19 @@ function buildProfileLayout(profile, user) {
 
     container.addTextDisplayComponents(
       new TextDisplayBuilder().setContent(`**메모:** ${profile.note}`),
+    );
+  }
+
+  // 스크린샷
+  if (profile.screenshot_url) {
+    container.addSeparatorComponents(
+      new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small),
+    );
+
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(profile.screenshot_url),
+      ),
     );
   }
 

@@ -130,7 +130,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const mirrorRaw = interaction.fields.getTextInputValue('mirror_floor');
         const countsRaw = interaction.fields.getTextInputValue('counts');
         const mainRaw = interaction.fields.getTextInputValue('main_info');
-        const note = interaction.fields.getTextInputValue('note') || null;
+
+        // 파일 업로드에서 스크린샷 URL 추출
+        let screenshotUrl = null;
+        const attachments = interaction.message?.attachments || interaction.attachments;
+        if (attachments?.size > 0) {
+          const file = attachments.first();
+          if (file?.contentType?.startsWith('image/')) {
+            screenshotUrl = file.url;
+          }
+        }
 
         const storyChapter = parseInt(chapterRaw) || null;
         const mirrorFloor = parseInt(mirrorRaw) || null;
@@ -153,7 +162,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         const { upsertProfile } = require('./services/limbusService');
         await upsertProfile(interaction.guild.id, interaction.user.id, {
           storyChapter, mirrorFloor, identityCount, egoCount, level,
-          mainSinner, mainIdentity, note,
+          mainSinner, mainIdentity, note: null, screenshotUrl,
         });
 
         await interaction.reply({

@@ -122,6 +122,7 @@ async function initDb() {
         main_sinner     VARCHAR(50),
         main_identity   VARCHAR(100),
         note            TEXT,
+        screenshot_url  TEXT,
         updated_at      TIMESTAMPTZ DEFAULT NOW(),
         PRIMARY KEY (guild_id, user_id)
       );

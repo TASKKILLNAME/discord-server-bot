@@ -10,8 +10,8 @@ async function getProfile(guildId, userId) {
 
 async function upsertProfile(guildId, userId, data) {
   const { rows } = await pool.query(
-    `INSERT INTO limbus_profiles (guild_id, user_id, story_chapter, mirror_floor, identity_count, ego_count, level, main_sinner, main_identity, note, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+    `INSERT INTO limbus_profiles (guild_id, user_id, story_chapter, mirror_floor, identity_count, ego_count, level, main_sinner, main_identity, note, screenshot_url, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
      ON CONFLICT (guild_id, user_id) DO UPDATE SET
        story_chapter  = COALESCE($3, limbus_profiles.story_chapter),
        mirror_floor   = COALESCE($4, limbus_profiles.mirror_floor),
@@ -21,6 +21,7 @@ async function upsertProfile(guildId, userId, data) {
        main_sinner    = COALESCE($8, limbus_profiles.main_sinner),
        main_identity  = COALESCE($9, limbus_profiles.main_identity),
        note           = COALESCE($10, limbus_profiles.note),
+       screenshot_url = COALESCE($11, limbus_profiles.screenshot_url),
        updated_at     = NOW()
      RETURNING *`,
     [
@@ -28,6 +29,7 @@ async function upsertProfile(guildId, userId, data) {
       data.storyChapter, data.mirrorFloor,
       data.identityCount, data.egoCount,
       data.level, data.mainSinner, data.mainIdentity, data.note,
+      data.screenshotUrl,
     ]
   );
   return rows[0];
