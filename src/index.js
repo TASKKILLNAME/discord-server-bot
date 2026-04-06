@@ -124,6 +124,44 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
       }
 
+      // 림버스 진척도 모달
+      if (interaction.customId === 'limbus_profile_modal') {
+        const chapterRaw = interaction.fields.getTextInputValue('story_chapter');
+        const mirrorRaw = interaction.fields.getTextInputValue('mirror_floor');
+        const countsRaw = interaction.fields.getTextInputValue('counts');
+        const mainRaw = interaction.fields.getTextInputValue('main_info');
+        const note = interaction.fields.getTextInputValue('note') || null;
+
+        const storyChapter = parseInt(chapterRaw) || null;
+        const mirrorFloor = parseInt(mirrorRaw) || null;
+
+        let identityCount = null, egoCount = null, level = null;
+        if (countsRaw) {
+          const parts = countsRaw.split('/').map(s => parseInt(s.trim()));
+          identityCount = parts[0] || null;
+          egoCount = parts[1] || null;
+          level = parts[2] || null;
+        }
+
+        let mainSinner = null, mainIdentity = null;
+        if (mainRaw) {
+          const parts = mainRaw.split('/').map(s => s.trim());
+          mainSinner = parts[0] || null;
+          mainIdentity = parts[1] || null;
+        }
+
+        const { upsertProfile } = require('./services/limbusService');
+        await upsertProfile(interaction.guild.id, interaction.user.id, {
+          storyChapter, mirrorFloor, identityCount, egoCount, level,
+          mainSinner, mainIdentity, note,
+        });
+
+        await interaction.reply({
+          content: '✅ 림버스 진척도가 저장되었습니다! `/림버스 조회`로 확인해보세요.',
+          ephemeral: true,
+        });
+      }
+
       // 빠른 이벤트 모달
       if (interaction.customId === 'quick_event_modal') {
         const title = interaction.fields.getTextInputValue('event_title');

@@ -110,7 +110,23 @@ async function initDb() {
         PRIMARY KEY (guild_id, user_id)
       );
     `);
-    console.log('✅ DB 초기화 완료 (levels, welcome_settings, lol_tracker, patch_state, memberships, patch_channels, titles 테이블)');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS limbus_profiles (
+        guild_id        VARCHAR(20) NOT NULL,
+        user_id         VARCHAR(20) NOT NULL,
+        story_chapter   INTEGER     DEFAULT 0,
+        mirror_floor    INTEGER     DEFAULT 0,
+        identity_count  INTEGER     DEFAULT 0,
+        ego_count       INTEGER     DEFAULT 0,
+        level           INTEGER     DEFAULT 1,
+        main_sinner     VARCHAR(50),
+        main_identity   VARCHAR(100),
+        note            TEXT,
+        updated_at      TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (guild_id, user_id)
+      );
+    `);
+    console.log('✅ DB 초기화 완료 (levels, welcome_settings, lol_tracker, patch_state, memberships, patch_channels, titles, limbus_profiles 테이블)');
   } catch (err) {
     console.error('❌ DB 초기화 실패:', err.message);
     console.error('   DATABASE_URL 설정 확인:', process.env.DATABASE_URL ? '있음' : '없음');
