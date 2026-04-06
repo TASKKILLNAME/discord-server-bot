@@ -10,7 +10,6 @@ const {
   SeparatorSpacingSize,
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
-  FileUploadBuilder,
   MessageFlags,
 } = require('discord.js');
 const { getProfile, upsertProfile, deleteProfile, getRanking } = require('../services/limbusService');
@@ -34,6 +33,14 @@ module.exports = {
       sub.setName('랭킹').setDescription('서버 내 림버스 진척도 랭킹')
     )
     .addSubcommand((sub) =>
+      sub
+        .setName('스크린샷')
+        .setDescription('프로필에 스크린샷을 첨부합니다')
+        .addAttachmentOption((opt) =>
+          opt.setName('이미지').setDescription('게임 스크린샷').setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
       sub.setName('삭제').setDescription('내 진척도 데이터를 삭제합니다')
     ),
 
@@ -44,6 +51,7 @@ module.exports = {
       case '등록': return this.register(interaction);
       case '조회': return this.view(interaction);
       case '랭킹': return this.ranking(interaction);
+      case '스크린샷': return this.screenshot(interaction);
       case '삭제': return this.remove(interaction);
     }
   },
@@ -109,16 +117,12 @@ module.exports = {
       .setMaxLength(200)
       .setValue(existing?.note || '');
 
-    const screenshotInput = new FileUploadBuilder()
-      .setCustomId('screenshot')
-      .setRequired(false);
-
     modal.addComponents(
       new ActionRowBuilder().addComponents(chapterInput),
       new ActionRowBuilder().addComponents(mirrorInput),
       new ActionRowBuilder().addComponents(countsInput),
       new ActionRowBuilder().addComponents(mainInput),
-      new ActionRowBuilder().addComponents(screenshotInput),
+      new ActionRowBuilder().addComponents(noteInput),
     );
 
     await interaction.showModal(modal);
@@ -192,6 +196,37 @@ module.exports = {
     await interaction.reply({
       components: [container],
       flags: MessageFlags.IsComponentsV2,
+    });
+  },
+
+  // ── 스크린샷 첨부 ──
+  async screenshot(interaction) {
+    const attachment = interaction.options.getAttachment('이미지');
+
+    if (!attachment.contentType?.startsWith('image/')) {
+      return interaction.reply({
+        content: '❌ 이미지 파일만 업로드할 수 있습니다.',
+        ephemeral: true,
+      });
+    }
+
+    const existing = await getProfile(interaction.guild.id, interaction.user.id);
+    if (!existing) {
+      return interaction.reply({
+        content: '❌ 먼저 `/림버스 등록`으로 진척도를 등록해주세요.',
+        ephemeral: true,
+      });
+    }
+
+    await upsertProfile(interaction.guild.id, interaction.user.id, {
+      storyChapter: null, mirrorFloor: null, identityCount: null,
+      egoCount: null, level: null, mainSinner: null, mainIdentity: null,
+      note: null, screenshotUrl: attachment.url,
+    });
+
+    await interaction.reply({
+      content: '✅ 스크린샷이 저장되었습니다! `/림버스 조회`로 확인해보세요.',
+      ephemeral: true,
     });
   },
 
