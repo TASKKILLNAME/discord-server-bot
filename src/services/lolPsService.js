@@ -1,15 +1,21 @@
+const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 
 /**
  * lol.ps 챔피언 라인별 데이터 서비스
  *
- * lol.ps의 SvelteKit __data.json 엔드포인트를 호출해서
- * 라인별 챔피언 목록을 메모리에 캐싱한다.
+ * 우선순위:
+ *   1) data/lolps-champions.json (로컬 스냅샷) ← 기본 동작, 드롭릿에서 사용
+ *   2) 그래도 없으면 lol.ps 라이브 fetch (로컬 개발용 폴백)
  *
- * 봇 시작 시 init()을 1회 호출하면 끝. 패치마다 갱신하려면 봇을 재시작.
+ * lol.ps는 미국 DigitalOcean 같은 일부 지역에서 차단되므로,
+ * 패치마다 한국에서 `node scripts/refresh-lolps.js`를 돌려
+ * data/lolps-champions.json을 갱신하고 git에 커밋한다.
  */
 
 const ENDPOINT = 'https://lol.ps/statistics/__data.json';
+const SNAPSHOT_PATH = path.join(__dirname, '..', '..', 'data', 'lolps-champions.json');
 
 // laneId → 내부 키 (lol.ps에서 확인된 매핑)
 const LANE_ID_TO_KEY = {
@@ -34,6 +40,7 @@ const LANE_KO_TO_KEY = {
 // { TOP: ['가렌', ...], JUNGLE: [...], ... }
 let cache = null;
 let cacheLoadedAt = null;
+let cacheSource = null;
 
 /**
  * SvelteKit devalue 포맷의 flat array를 일반 객체로 복원
@@ -68,7 +75,21 @@ function hydrate(arr) {
 }
 
 /**
- * lol.ps에서 데이터를 받아 라인별 챔피언 목록으로 변환
+ * 로컬 스냅샷 JSON에서 캐시 로드
+ */
+function loadFromSnapshot() {
+  if (!fs.existsSync(SNAPSHOT_PATH)) return null;
+  const raw = fs.readFileSync(SNAPSHOT_PATH, 'utf-8');
+  const parsed = JSON.parse(raw);
+  if (!parsed?.champions) return null;
+  return {
+    champions: parsed.champions,
+    updatedAt: parsed.updatedAt ? new Date(parsed.updatedAt) : null,
+  };
+}
+
+/**
+ * lol.ps에서 라이브 fetch (폴백용)
  */
 async function fetchAndParse() {
   const { data } = await axios.get(ENDPOINT, {
@@ -79,7 +100,6 @@ async function fetchAndParse() {
     },
   });
 
-  // nodes[3]이 tierlist를 담고 있는 노드 (확인됨)
   const tierNode = data?.nodes?.[3];
   if (!tierNode || !Array.isArray(tierNode.data)) {
     throw new Error('lol.ps 응답 구조가 예상과 다름 (nodes[3].data 없음)');
@@ -92,7 +112,13 @@ async function fetchAndParse() {
   }
 
   const result = { TOP: [], JUNGLE: [], MID: [], ADC: [], SUPPORT: [] };
-  const seen = { TOP: new Set(), JUNGLE: new Set(), MID: new Set(), ADC: new Set(), SUPPORT: new Set() };
+  const seen = {
+    TOP: new Set(),
+    JUNGLE: new Set(),
+    MID: new Set(),
+    ADC: new Set(),
+    SUPPORT: new Set(),
+  };
 
   for (const entry of tierlist) {
     const laneKey = LANE_ID_TO_KEY[entry.laneId];
@@ -109,15 +135,36 @@ async function fetchAndParse() {
 
 /**
  * 봇 시작 시 1회 호출. 캐시를 채운다.
+ * 1순위: 로컬 스냅샷
+ * 2순위: 라이브 fetch (스냅샷이 없거나 망가졌을 때)
  */
 async function init() {
+  // 1) 로컬 스냅샷 시도
+  try {
+    const snap = loadFromSnapshot();
+    if (snap) {
+      cache = snap.champions;
+      cacheLoadedAt = snap.updatedAt || new Date();
+      cacheSource = 'snapshot';
+      const counts = Object.entries(cache)
+        .map(([k, v]) => `${k}=${v.length}`)
+        .join(', ');
+      console.log(`🎲 lol.ps 챔피언 스냅샷 로드 완료 (${counts})`);
+      return;
+    }
+  } catch (err) {
+    console.error('⚠️ lol.ps 스냅샷 로드 실패, 라이브 fetch 시도:', err.message);
+  }
+
+  // 2) 라이브 fetch 폴백
   try {
     cache = await fetchAndParse();
     cacheLoadedAt = new Date();
+    cacheSource = 'live';
     const counts = Object.entries(cache)
       .map(([k, v]) => `${k}=${v.length}`)
       .join(', ');
-    console.log(`🎲 lol.ps 챔피언 캐시 로드 완료 (${counts})`);
+    console.log(`🎲 lol.ps 챔피언 라이브 로드 완료 (${counts})`);
   } catch (err) {
     console.error('❌ lol.ps 챔피언 캐시 로드 실패:', err.message);
     cache = null;
@@ -130,7 +177,13 @@ async function init() {
 function normalizeLane(input) {
   if (!input) return null;
   const upper = String(input).toUpperCase();
-  if (LANE_ID_TO_KEY[0] === upper || LANE_ID_TO_KEY[1] === upper || LANE_ID_TO_KEY[2] === upper || LANE_ID_TO_KEY[3] === upper || LANE_ID_TO_KEY[4] === upper) {
+  if (
+    LANE_ID_TO_KEY[0] === upper ||
+    LANE_ID_TO_KEY[1] === upper ||
+    LANE_ID_TO_KEY[2] === upper ||
+    LANE_ID_TO_KEY[3] === upper ||
+    LANE_ID_TO_KEY[4] === upper
+  ) {
     return upper;
   }
   return LANE_KO_TO_KEY[input] || null;
@@ -170,6 +223,7 @@ function getCacheInfo() {
   return {
     loaded: true,
     loadedAt: cacheLoadedAt,
+    source: cacheSource,
     counts: Object.fromEntries(Object.entries(cache).map(([k, v]) => [k, v.length])),
   };
 }

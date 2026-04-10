@@ -1,5 +1,6 @@
 node_modules/
 .env
 data/*.json
+!data/lolps-champions.json
 data/tts/
 CLAUDE_TASK.md
