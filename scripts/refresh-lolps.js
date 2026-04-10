@@ -13,7 +13,7 @@ const path = require('path');
 const axios = require('axios');
 
 const ENDPOINT = 'https://lol.ps/statistics/__data.json';
-const OUTPUT = path.join(__dirname, '..', 'data', 'lolps-champions.json');
+const OUTPUT = path.join(__dirname, '..', 'assets', 'lolps-champions.json');
 
 const LANE_ID_TO_KEY = {
   0: 'TOP',

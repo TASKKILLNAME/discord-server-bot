@@ -15,7 +15,9 @@ const axios = require('axios');
  */
 
 const ENDPOINT = 'https://lol.ps/statistics/__data.json';
-const SNAPSHOT_PATH = path.join(__dirname, '..', '..', 'data', 'lolps-champions.json');
+// assets/는 named volume이 마운트되는 data/와 달리 이미지에 그대로 들어가므로
+// 컨테이너 안에서 항상 접근 가능하다.
+const SNAPSHOT_PATH = path.join(__dirname, '..', '..', 'assets', 'lolps-champions.json');
 
 // laneId → 내부 키 (lol.ps에서 확인된 매핑)
 const LANE_ID_TO_KEY = {
