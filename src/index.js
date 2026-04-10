@@ -19,6 +19,7 @@ const { initDb } = require('./db');
 const { handleVoiceStateUpdate, cleanupTempChannels } = require('./services/tempVoiceService');
 const { handleVoteButton } = require('./services/voteService');
 const { startTracker } = require('./services/activityTrackerService');
+const { init: initLolPsCache } = require('./services/lolPsService');
 
 // ============================================
 // 클라이언트 설정
@@ -86,6 +87,9 @@ client.once(Events.ClientReady, async (c) => {
 
   // 임시 음성채널 정리 (봇 재시작 시)
   await cleanupTempChannels(client);
+
+  // lol.ps 챔피언 라인별 캐시 로드 (랜덤챔피언 명령어용)
+  await initLolPsCache();
 });
 
 // ============================================
