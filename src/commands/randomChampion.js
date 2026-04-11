@@ -49,18 +49,24 @@ module.exports = {
     try {
       const picks = getRandomChampions(lane, count);
       const laneLabel = LANE_LABELS[lane] || lane;
+      const anyJackpot = picks.some((p) => p.jackpot);
+
+      const formatPick = (p) =>
+        p.jackpot ? `💥 **꽝!** ${p.name} \`(전체 풀)\`` : p.name;
 
       const description =
         count === 1
-          ? `## ${picks[0]}`
-          : picks.map((name, i) => `**${i + 1}.** ${name}`).join('\n');
+          ? picks[0].jackpot
+            ? `## 💥 꽝!\n## ${picks[0].name}\n*전체 챔피언 풀에서 뽑혔습니다*`
+            : `## ${picks[0].name}`
+          : picks.map((p, i) => `**${i + 1}.** ${formatPick(p)}`).join('\n');
 
       const embed = new EmbedBuilder()
         .setTitle(`🎲 ${laneLabel} 랜덤 챔피언`)
         .setDescription(description)
-        .setColor(0x5865f2)
+        .setColor(anyJackpot ? 0xed4245 : 0x5865f2)
         .setFooter({
-          text: `lol.ps 기준 · ${laneLabel} 풀 ${cacheInfo.counts[lane]}명 중 ${picks.length}명`,
+          text: `lol.ps 기준 · ${laneLabel} 풀 ${cacheInfo.counts[lane]}명 + 꽝 1칸 (1/${cacheInfo.counts[lane] + 1})`,
         });
 
       await interaction.reply({ embeds: [embed] });

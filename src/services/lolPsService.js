@@ -41,6 +41,7 @@ const LANE_KO_TO_KEY = {
 
 // { TOP: ['가렌', ...], JUNGLE: [...], ... }
 let cache = null;
+let allPool = null; // 모든 라인의 챔피언 합집합 (꽝 당첨 시 뽑기 풀)
 let cacheLoadedAt = null;
 let cacheSource = null;
 
@@ -136,6 +137,18 @@ async function fetchAndParse() {
 }
 
 /**
+ * 모든 라인의 챔피언을 합쳐서 중복 제거한 전체 풀 빌드
+ */
+function buildAllPool() {
+  if (!cache) return null;
+  const set = new Set();
+  for (const pool of Object.values(cache)) {
+    for (const name of pool) set.add(name);
+  }
+  return Array.from(set);
+}
+
+/**
  * 봇 시작 시 1회 호출. 캐시를 채운다.
  * 1순위: 로컬 스냅샷
  * 2순위: 라이브 fetch (스냅샷이 없거나 망가졌을 때)
@@ -146,12 +159,13 @@ async function init() {
     const snap = loadFromSnapshot();
     if (snap) {
       cache = snap.champions;
+      allPool = buildAllPool();
       cacheLoadedAt = snap.updatedAt || new Date();
       cacheSource = 'snapshot';
       const counts = Object.entries(cache)
         .map(([k, v]) => `${k}=${v.length}`)
         .join(', ');
-      console.log(`🎲 lol.ps 챔피언 스냅샷 로드 완료 (${counts})`);
+      console.log(`🎲 lol.ps 챔피언 스냅샷 로드 완료 (${counts}, 전체=${allPool.length})`);
       return;
     }
   } catch (err) {
@@ -161,15 +175,17 @@ async function init() {
   // 2) 라이브 fetch 폴백
   try {
     cache = await fetchAndParse();
+    allPool = buildAllPool();
     cacheLoadedAt = new Date();
     cacheSource = 'live';
     const counts = Object.entries(cache)
       .map(([k, v]) => `${k}=${v.length}`)
       .join(', ');
-    console.log(`🎲 lol.ps 챔피언 라이브 로드 완료 (${counts})`);
+    console.log(`🎲 lol.ps 챔피언 라이브 로드 완료 (${counts}, 전체=${allPool.length})`);
   } catch (err) {
     console.error('❌ lol.ps 챔피언 캐시 로드 실패:', err.message);
     cache = null;
+    allPool = null;
   }
 }
 
@@ -193,31 +209,44 @@ function normalizeLane(input) {
 
 /**
  * 지정한 라인에서 랜덤 챔피언을 count명 뽑는다 (중복 없음).
+ *
+ * 각 뽑기마다 "꽝" 슬롯 1개가 라인 풀에 섞여 있다고 가정한다.
+ * 즉, 라인 풀 크기가 N이면 꽝이 나올 확률은 1/(N+1).
+ * 꽝이 나오면 해당 1픽은 전체 챔피언 풀에서 뽑는다 (라인 무시).
+ *
  * @param {string} laneInput - '탑'|'정글'|'미드'|'바텀'|'서폿' 또는 내부 키
  * @param {number} count - 뽑을 챔피언 수 (기본 1)
- * @returns {string[]} 챔피언 한글명 배열
+ * @returns {Array<{ name: string, jackpot: boolean }>}
  */
 function getRandomChampions(laneInput, count = 1) {
-  if (!cache) {
+  if (!cache || !allPool) {
     throw new Error('챔피언 캐시가 아직 로드되지 않았습니다. 봇 재시작 후 다시 시도해주세요.');
   }
   const lane = normalizeLane(laneInput);
   if (!lane) {
     throw new Error(`알 수 없는 라인: ${laneInput}`);
   }
-  const pool = cache[lane];
-  if (!pool || pool.length === 0) {
+  const lanePool = cache[lane];
+  if (!lanePool || lanePool.length === 0) {
     throw new Error(`${lane} 라인 챔피언 데이터가 없습니다.`);
   }
 
-  const n = Math.min(Math.max(1, count), pool.length);
-  // Fisher-Yates 부분 셔플
-  const arr = pool.slice();
-  for (let i = arr.length - 1; i > arr.length - 1 - n; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+  const n = Math.min(Math.max(1, count), lanePool.length);
+  const picks = [];
+  const used = new Set();
+
+  for (let i = 0; i < n; i++) {
+    // 라인 풀에 꽝 슬롯 1개가 포함되어 있다고 가정 → 꽝 확률 = 1 / (풀 + 1)
+    const jackpot = Math.random() < 1 / (lanePool.length + 1);
+    const source = jackpot ? allPool : lanePool;
+    const remaining = source.filter((name) => !used.has(name));
+    if (remaining.length === 0) break;
+    const pick = remaining[Math.floor(Math.random() * remaining.length)];
+    picks.push({ name: pick, jackpot });
+    used.add(pick);
   }
-  return arr.slice(arr.length - n);
+
+  return picks;
 }
 
 function getCacheInfo() {
