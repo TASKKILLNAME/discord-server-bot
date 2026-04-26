@@ -37,6 +37,8 @@ const LANE_KO_TO_KEY = {
   원딜: 'ADC',
   서폿: 'SUPPORT',
   서포터: 'SUPPORT',
+  모두: 'ALL',
+  전체: 'ALL',
 };
 
 // { TOP: ['가렌', ...], JUNGLE: [...], ... }
@@ -195,6 +197,7 @@ async function init() {
 function normalizeLane(input) {
   if (!input) return null;
   const upper = String(input).toUpperCase();
+  if (upper === 'ALL') return 'ALL';
   if (
     LANE_ID_TO_KEY[0] === upper ||
     LANE_ID_TO_KEY[1] === upper ||
@@ -226,6 +229,22 @@ function getRandomChampions(laneInput, count = 1) {
   if (!lane) {
     throw new Error(`알 수 없는 라인: ${laneInput}`);
   }
+
+  // ALL: 전체 풀에서 직접 뽑기 (꽝 메커니즘 없음)
+  if (lane === 'ALL') {
+    const n = Math.min(Math.max(1, count), allPool.length);
+    const picks = [];
+    const used = new Set();
+    for (let i = 0; i < n; i++) {
+      const remaining = allPool.filter((name) => !used.has(name));
+      if (remaining.length === 0) break;
+      const pick = remaining[Math.floor(Math.random() * remaining.length)];
+      picks.push({ name: pick, jackpot: false });
+      used.add(pick);
+    }
+    return picks;
+  }
+
   const lanePool = cache[lane];
   if (!lanePool || lanePool.length === 0) {
     throw new Error(`${lane} 라인 챔피언 데이터가 없습니다.`);
@@ -256,6 +275,7 @@ function getCacheInfo() {
     loadedAt: cacheLoadedAt,
     source: cacheSource,
     counts: Object.fromEntries(Object.entries(cache).map(([k, v]) => [k, v.length])),
+    allCount: allPool ? allPool.length : 0,
   };
 }
 

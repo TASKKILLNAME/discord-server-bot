@@ -7,6 +7,7 @@ const LANE_LABELS = {
   MID: '✨ 미드',
   ADC: '🏹 바텀',
   SUPPORT: '💖 서폿',
+  ALL: '🎯 모두',
 };
 
 module.exports = {
@@ -23,7 +24,8 @@ module.exports = {
           { name: '정글', value: 'JUNGLE' },
           { name: '미드', value: 'MID' },
           { name: '바텀', value: 'ADC' },
-          { name: '서폿', value: 'SUPPORT' }
+          { name: '서폿', value: 'SUPPORT' },
+          { name: '모두', value: 'ALL' }
         )
     )
     .addIntegerOption((opt) =>
@@ -49,6 +51,7 @@ module.exports = {
     try {
       const picks = getRandomChampions(lane, count);
       const laneLabel = LANE_LABELS[lane] || lane;
+      const isAll = lane === 'ALL';
       const anyJackpot = picks.some((p) => p.jackpot);
 
       const formatPick = (p) =>
@@ -61,13 +64,15 @@ module.exports = {
             : `## ${picks[0].name}`
           : picks.map((p, i) => `**${i + 1}.** ${formatPick(p)}`).join('\n');
 
+      const footerText = isAll
+        ? `lol.ps 기준 · 전체 챔피언 풀 ${cacheInfo.allCount}명 (꽝 없음)`
+        : `lol.ps 기준 · ${laneLabel} 풀 ${cacheInfo.counts[lane]}명 + 꽝 1칸 (1/${cacheInfo.counts[lane] + 1})`;
+
       const embed = new EmbedBuilder()
         .setTitle(`🎲 ${laneLabel} 랜덤 챔피언`)
         .setDescription(description)
         .setColor(anyJackpot ? 0xed4245 : 0x5865f2)
-        .setFooter({
-          text: `lol.ps 기준 · ${laneLabel} 풀 ${cacheInfo.counts[lane]}명 + 꽝 1칸 (1/${cacheInfo.counts[lane] + 1})`,
-        });
+        .setFooter({ text: footerText });
 
       await interaction.reply({ embeds: [embed] });
     } catch (err) {
