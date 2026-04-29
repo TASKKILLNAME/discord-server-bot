@@ -32,8 +32,25 @@ function saveEvents(events) {
 
 /**
  * 이벤트 생성
+ * @param {Object} opts
+ * @param {string} [opts.organizer] - 주최자 이름 (없으면 creatorName)
+ * @param {string} [opts.location] - 장소
+ * @param {string} [opts.deadline] - 투표 마감 시간 (ISO). 지나면 참석/불참 변경 불가
  */
-function createEvent({ guildId, channelId, messageId, creatorId, creatorName, title, description, datetime, repeat }) {
+function createEvent({
+  guildId,
+  channelId,
+  messageId,
+  creatorId,
+  creatorName,
+  title,
+  description,
+  datetime,
+  repeat,
+  organizer,
+  location,
+  deadline,
+}) {
   const events = loadEvents();
   const eventId = `evt_${Date.now()}`;
 
@@ -44,11 +61,15 @@ function createEvent({ guildId, channelId, messageId, creatorId, creatorName, ti
     messageId,
     creatorId,
     creatorName,
+    organizer: organizer || creatorName,
+    location: location || '',
+    deadline: deadline || null, // ISO string
     title,
     description: description || '',
     datetime, // ISO string
     repeat: repeat || 'none', // none, daily, weekly
-    participants: [],
+    attendees: [],
+    decliners: [],
     notified: false,
     createdAt: new Date().toISOString(),
   };
@@ -58,20 +79,82 @@ function createEvent({ guildId, channelId, messageId, creatorId, creatorName, ti
 }
 
 /**
- * 이벤트 참가/취소 토글
+ * 옛날 데이터 호환: participants → attendees
+ */
+function normalizeEvent(event) {
+  if (!event) return event;
+  if (Array.isArray(event.participants) && !Array.isArray(event.attendees)) {
+    event.attendees = event.participants;
+  }
+  if (!Array.isArray(event.attendees)) event.attendees = [];
+  if (!Array.isArray(event.decliners)) event.decliners = [];
+  // 옛 코드가 참조할 수 있도록 participants도 동기화 (attendees alias)
+  event.participants = event.attendees;
+  return event;
+}
+
+/**
+ * RSVP 상태 변경 (참석/불참/취소)
+ * @param {string} status - 'attend' | 'decline'
+ *   같은 상태를 다시 누르면 취소(toggle off)
+ * @returns {{ event, status: 'attend'|'decline'|'none', closed?: boolean }|null}
+ */
+function setRsvp(eventId, userId, userName, status) {
+  const events = loadEvents();
+  const event = normalizeEvent(events[eventId]);
+  if (!event) return null;
+
+  // 마감 체크
+  if (event.deadline && new Date() > new Date(event.deadline)) {
+    return { event, status: 'closed', closed: true };
+  }
+
+  const removeFrom = (arr) => {
+    const idx = arr.findIndex((p) => p.id === userId);
+    if (idx >= 0) arr.splice(idx, 1);
+    return idx >= 0;
+  };
+
+  const wasAttending = event.attendees.some((p) => p.id === userId);
+  const wasDeclining = event.decliners.some((p) => p.id === userId);
+
+  removeFrom(event.attendees);
+  removeFrom(event.decliners);
+
+  let finalStatus = 'none';
+  if (status === 'attend' && !wasAttending) {
+    event.attendees.push({ id: userId, name: userName, joinedAt: new Date().toISOString() });
+    finalStatus = 'attend';
+  } else if (status === 'decline' && !wasDeclining) {
+    event.decliners.push({ id: userId, name: userName, joinedAt: new Date().toISOString() });
+    finalStatus = 'decline';
+  }
+
+  // participants alias 동기화
+  event.participants = event.attendees;
+
+  saveEvents(events);
+  return { event, status: finalStatus, closed: false };
+}
+
+/**
+ * @deprecated setRsvp 사용 권장. 옛 핸들러 호환용.
  */
 function toggleParticipant(eventId, userId, userName) {
   const events = loadEvents();
-  const event = events[eventId];
+  const event = normalizeEvent(events[eventId]);
   if (!event) return null;
 
-  const idx = event.participants.findIndex((p) => p.id === userId);
+  const idx = event.attendees.findIndex((p) => p.id === userId);
   if (idx >= 0) {
-    event.participants.splice(idx, 1);
+    event.attendees.splice(idx, 1);
   } else {
-    event.participants.push({ id: userId, name: userName, joinedAt: new Date().toISOString() });
+    // decliners에 있으면 빼고
+    const dIdx = event.decliners.findIndex((p) => p.id === userId);
+    if (dIdx >= 0) event.decliners.splice(dIdx, 1);
+    event.attendees.push({ id: userId, name: userName, joinedAt: new Date().toISOString() });
   }
-
+  event.participants = event.attendees;
   saveEvents(events);
   return event;
 }
@@ -102,21 +185,22 @@ function getGuildEvents(guildId) {
  */
 function getEvent(eventId) {
   const events = loadEvents();
-  return events[eventId] || null;
+  return normalizeEvent(events[eventId] || null);
 }
 
 /**
  * 이벤트 Embed 생성
  */
 function createEventEmbed(event) {
+  event = normalizeEvent(event);
   const eventDate = new Date(event.datetime);
   const now = new Date();
   const isPast = eventDate < now;
+  const deadlineDate = event.deadline ? new Date(event.deadline) : null;
+  const deadlineClosed = deadlineDate && deadlineDate < now;
 
-  const participantList =
-    event.participants.length > 0
-      ? event.participants.map((p, i) => `${i + 1}. ${p.name}`).join('\n')
-      : '아직 참가자가 없습니다';
+  const fmtList = (arr, emptyText) =>
+    arr.length > 0 ? arr.map((p, i) => `${i + 1}. ${p.name}`).join('\n') : emptyText;
 
   const repeatText = {
     none: '없음',
@@ -124,38 +208,57 @@ function createEventEmbed(event) {
     weekly: '🔁 매주 반복',
   };
 
+  const fields = [];
+
+  if (event.description) {
+    fields.push({ name: '📝 설명', value: event.description });
+  }
+
+  fields.push({
+    name: '🕐 일시',
+    value: `<t:${Math.floor(eventDate.getTime() / 1000)}:F>\n(<t:${Math.floor(eventDate.getTime() / 1000)}:R>)`,
+  });
+
+  if (event.location) {
+    fields.push({ name: '📍 장소', value: event.location, inline: true });
+  }
+
+  fields.push({ name: '👤 주최자', value: event.organizer || event.creatorName, inline: true });
+
+  if (event.repeat && event.repeat !== 'none') {
+    fields.push({ name: '🔄 반복', value: repeatText[event.repeat], inline: true });
+  }
+
+  if (deadlineDate) {
+    const dlTs = Math.floor(deadlineDate.getTime() / 1000);
+    fields.push({
+      name: deadlineClosed ? '⏰ 투표 마감됨' : '⏰ 투표 마감',
+      value: `<t:${dlTs}:F> (<t:${dlTs}:R>)`,
+    });
+  }
+
+  fields.push({
+    name: `✅ 참석 (${event.attendees.length}명)`,
+    value: fmtList(event.attendees, '*아직 없음*'),
+    inline: true,
+  });
+  fields.push({
+    name: `❌ 불참 (${event.decliners.length}명)`,
+    value: fmtList(event.decliners, '*아직 없음*'),
+    inline: true,
+  });
+
   const embed = new EmbedBuilder()
     .setTitle(`📅 ${event.title}`)
-    .setColor(isPast ? 0x747f8d : 0x5865f2)
-    .addFields(
-      {
-        name: '📝 설명',
-        value: event.description || '설명 없음',
-      },
-      {
-        name: '🕐 일시',
-        value: `<t:${Math.floor(eventDate.getTime() / 1000)}:F>\n(<t:${Math.floor(eventDate.getTime() / 1000)}:R>)`,
-      },
-      {
-        name: '🔄 반복',
-        value: repeatText[event.repeat] || '없음',
-        inline: true,
-      },
-      {
-        name: `✅ 참가자 (${event.participants.length}명)`,
-        value: participantList,
-      },
-      {
-        name: '👤 생성자',
-        value: event.creatorName,
-        inline: true,
-      }
-    )
+    .setColor(isPast ? 0x747f8d : deadlineClosed ? 0xed4245 : 0x5865f2)
+    .addFields(fields)
     .setFooter({ text: `이벤트 ID: ${event.id}` })
     .setTimestamp(eventDate);
 
   if (isPast && event.repeat === 'none') {
     embed.setDescription('⏰ 이 이벤트는 이미 종료되었습니다.');
+  } else if (deadlineClosed) {
+    embed.setDescription('🔒 투표가 마감되었습니다.');
   }
 
   return embed;
@@ -281,6 +384,7 @@ function stopEventScheduler() {
 module.exports = {
   createEvent,
   toggleParticipant,
+  setRsvp,
   deleteEvent,
   getGuildEvents,
   getEvent,
@@ -288,4 +392,5 @@ module.exports = {
   startEventScheduler,
   stopEventScheduler,
   loadEvents,
+  normalizeEvent,
 };

@@ -4,11 +4,13 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   PermissionFlagsBits,
 } = require('discord.js');
 const {
   createEvent,
   toggleParticipant,
+  setRsvp,
   deleteEvent,
   getGuildEvents,
   getEvent,
@@ -29,7 +31,7 @@ module.exports = {
         .addStringOption((opt) =>
           opt
             .setName('날짜')
-            .setDescription('날짜 (예: 2026-02-20)')
+            .setDescription('날짜 (예: 2026-05-01)')
             .setRequired(true)
         )
         .addStringOption((opt) =>
@@ -39,7 +41,29 @@ module.exports = {
             .setRequired(true)
         )
         .addStringOption((opt) =>
+          opt.setName('장소').setDescription('이벤트 장소 (예: 성균관대역)')
+        )
+        .addStringOption((opt) =>
+          opt.setName('주최자').setDescription('주최자 이름 (없으면 본인)')
+        )
+        .addStringOption((opt) =>
           opt.setName('설명').setDescription('이벤트 설명')
+        )
+        .addStringOption((opt) =>
+          opt
+            .setName('마감')
+            .setDescription('투표 마감 (예: 2026-04-30 23:59) - 지나면 참석/불참 변경 불가')
+        )
+        .addChannelOption((opt) =>
+          opt
+            .setName('채널')
+            .setDescription('이벤트를 게시할 채널 (기본: 현재 채널)')
+            .addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        )
+        .addBooleanOption((opt) =>
+          opt
+            .setName('전체알림')
+            .setDescription('@everyone으로 전체 멤버 알림 (기본 false)')
         )
         .addStringOption((opt) =>
           opt
@@ -100,7 +124,13 @@ module.exports = {
     const title = interaction.options.getString('제목');
     const dateStr = interaction.options.getString('날짜');
     const timeStr = interaction.options.getString('시간');
+    const location = interaction.options.getString('장소') || '';
+    const organizer = interaction.options.getString('주최자') || '';
     const description = interaction.options.getString('설명') || '';
+    const deadlineStr = interaction.options.getString('마감') || '';
+    const targetChannel =
+      interaction.options.getChannel('채널') || interaction.channel;
+    const mentionEveryone = interaction.options.getBoolean('전체알림') || false;
     const repeat = interaction.options.getString('반복') || 'none';
 
     // 날짜 파싱
@@ -108,7 +138,7 @@ module.exports = {
 
     if (isNaN(datetime.getTime())) {
       return interaction.reply({
-        content: '❌ 날짜/시간 형식이 올바르지 않습니다.\n예: 날짜 `2026-02-20` 시간 `20:00`',
+        content: '❌ 날짜/시간 형식이 올바르지 않습니다.\n예: 날짜 `2026-05-01` 시간 `20:00`',
         ephemeral: true,
       });
     }
@@ -120,34 +150,82 @@ module.exports = {
       });
     }
 
-    await interaction.deferReply();
+    // 마감 시간 파싱 (선택)
+    let deadlineISO = null;
+    if (deadlineStr.trim()) {
+      const normalized = deadlineStr.trim().replace(' ', 'T');
+      const deadlineDate = new Date(`${normalized}:00+09:00`);
+      if (isNaN(deadlineDate.getTime())) {
+        return interaction.reply({
+          content: '❌ 마감 시간 형식이 올바르지 않습니다.\n예: `2026-04-30 23:59`',
+          ephemeral: true,
+        });
+      }
+      if (deadlineDate >= datetime) {
+        return interaction.reply({
+          content: '❌ 마감 시간은 이벤트 시작 시간보다 이전이어야 합니다.',
+          ephemeral: true,
+        });
+      }
+      deadlineISO = deadlineDate.toISOString();
+    }
+
+    // 채널에 보내기 권한 체크
+    const me = interaction.guild.members.me;
+    const perms = targetChannel.permissionsFor(me);
+    if (!perms?.has(PermissionFlagsBits.SendMessages)) {
+      return interaction.reply({
+        content: `❌ ${targetChannel} 채널에 메시지를 보낼 권한이 없습니다.`,
+        ephemeral: true,
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: targetChannel.id !== interaction.channel.id });
 
     // 이벤트 생성 (messageId는 나중에 업데이트)
     const event = createEvent({
       guildId: interaction.guild.id,
-      channelId: interaction.channel.id,
+      channelId: targetChannel.id,
       messageId: null,
       creatorId: interaction.user.id,
       creatorName: interaction.member.displayName,
+      organizer: organizer || interaction.member.displayName,
+      location,
+      deadline: deadlineISO,
       title,
       description,
       datetime: datetime.toISOString(),
       repeat,
     });
 
-    // Embed + 참가 버튼
     const embed = createEventEmbed(event);
     const row = createEventButtons(event.id);
 
-    const reply = await interaction.editReply({
-      embeds: [embed],
-      components: [row],
-    });
+    // 다른 채널이면 그 채널에 보내고, 같은 채널이면 deferReply의 답으로 처리
+    let postedMessage;
+    if (targetChannel.id !== interaction.channel.id) {
+      postedMessage = await targetChannel.send({
+        content: mentionEveryone ? '@everyone' : undefined,
+        embeds: [embed],
+        components: [row],
+        allowedMentions: mentionEveryone ? { parse: ['everyone'] } : { parse: [] },
+      });
+      await interaction.editReply({
+        content: `✅ ${targetChannel}에 이벤트를 게시했어요.`,
+      });
+    } else {
+      postedMessage = await interaction.editReply({
+        content: mentionEveryone ? '@everyone' : undefined,
+        embeds: [embed],
+        components: [row],
+        allowedMentions: mentionEveryone ? { parse: ['everyone'] } : { parse: [] },
+      });
+    }
 
     // messageId 업데이트
     const events = require('../services/eventService').loadEvents();
     if (events[event.id]) {
-      events[event.id].messageId = reply.id;
+      events[event.id].messageId = postedMessage.id;
       require('fs').writeFileSync(
         require('path').join(__dirname, '../../data/events.json'),
         JSON.stringify(events, null, 2)
@@ -263,40 +341,52 @@ module.exports = {
   },
 
   // ============================================
-  // 버튼 처리 (참가/취소, 참가자 목록)
+  // 버튼 처리 (참석/불참, 명단)
   // ============================================
   async handleButton(interaction) {
-    const [action, eventId] = interaction.customId.split('_').slice(1);
-    // customId format: event_join_evt_xxxxx or event_list_evt_xxxxx
-
+    // customId 형식: event_<action>_evt_<timestamp>
+    const action = interaction.customId.split('_')[1];
     const fullEventId = `evt_${interaction.customId.split('evt_')[1]}`;
 
-    if (action === 'join') {
-      return this.handleJoin(interaction, fullEventId);
+    if (action === 'attend') {
+      return this.handleRsvp(interaction, fullEventId, 'attend');
+    }
+    if (action === 'decline') {
+      return this.handleRsvp(interaction, fullEventId, 'decline');
     }
     if (action === 'list') {
       return this.handleParticipantList(interaction, fullEventId);
     }
+    // 옛 버전 호환
+    if (action === 'join') {
+      return this.handleRsvp(interaction, fullEventId, 'attend');
+    }
   },
 
-  async handleJoin(interaction, eventId) {
-    const event = toggleParticipant(
+  async handleRsvp(interaction, eventId, status) {
+    const result = setRsvp(
       eventId,
       interaction.user.id,
-      interaction.member.displayName
+      interaction.member.displayName,
+      status
     );
 
-    if (!event) {
+    if (!result) {
       return interaction.reply({
         content: '❌ 이벤트를 찾을 수 없습니다.',
         ephemeral: true,
       });
     }
 
-    const isJoined = event.participants.some((p) => p.id === interaction.user.id);
+    if (result.closed) {
+      return interaction.reply({
+        content: '🔒 투표가 마감됐어요.',
+        ephemeral: true,
+      });
+    }
 
     // Embed 업데이트
-    const embed = createEventEmbed(event);
+    const embed = createEventEmbed(result.event);
     const row = createEventButtons(eventId);
 
     await interaction.update({
@@ -304,15 +394,17 @@ module.exports = {
       components: [row],
     });
 
-    // 확인 메시지 (ephemeral follow-up)
-    const confirmMsg = isJoined
-      ? `✅ **${event.title}** 이벤트에 참가했습니다! 시작 5분 전에 DM으로 알림을 보내드립니다.`
-      : `❎ **${event.title}** 이벤트 참가를 취소했습니다.`;
+    // 확인 메시지
+    let msg;
+    if (result.status === 'attend') {
+      msg = `✅ **${result.event.title}** 참석으로 표시했어요. 시작 5분 전 DM 알림이 가요.`;
+    } else if (result.status === 'decline') {
+      msg = `❌ **${result.event.title}** 불참으로 표시했어요.`;
+    } else {
+      msg = `↩️ **${result.event.title}** 응답을 취소했어요.`;
+    }
 
-    await interaction.followUp({
-      content: confirmMsg,
-      ephemeral: true,
-    });
+    await interaction.followUp({ content: msg, ephemeral: true });
   },
 
   async handleParticipantList(interaction, eventId) {
@@ -325,25 +417,21 @@ module.exports = {
       });
     }
 
-    if (event.participants.length === 0) {
-      return interaction.reply({
-        content: '📋 아직 참가자가 없습니다.',
-        ephemeral: true,
-      });
-    }
+    const fmtList = (arr) =>
+      arr.length > 0
+        ? arr.map((p, i) => `${i + 1}. <@${p.id}>`).join('\n')
+        : '*없음*';
 
     const embed = new EmbedBuilder()
-      .setTitle(`📋 ${event.title} - 참가자 목록`)
-      .setDescription(
-        event.participants
-          .map((p, i) => {
-            const joinDate = new Date(p.joinedAt);
-            return `${i + 1}. <@${p.id}> (${joinDate.toLocaleDateString('ko-KR')} 참가)`;
-          })
-          .join('\n')
-      )
+      .setTitle(`📋 ${event.title} - 응답 명단`)
       .setColor(0x43b581)
-      .setFooter({ text: `총 ${event.participants.length}명 참가` });
+      .addFields(
+        { name: `✅ 참석 (${event.attendees.length}명)`, value: fmtList(event.attendees), inline: true },
+        { name: `❌ 불참 (${event.decliners.length}명)`, value: fmtList(event.decliners), inline: true }
+      )
+      .setFooter({
+        text: `총 ${event.attendees.length + event.decliners.length}명 응답`,
+      });
 
     await interaction.reply({
       embeds: [embed],
@@ -358,12 +446,16 @@ module.exports = {
 function createEventButtons(eventId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId(`event_join_${eventId}`)
-      .setLabel('✅ 참가 / 취소')
+      .setCustomId(`event_attend_${eventId}`)
+      .setLabel('✅ 참석')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
+      .setCustomId(`event_decline_${eventId}`)
+      .setLabel('❌ 불참')
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
       .setCustomId(`event_list_${eventId}`)
-      .setLabel('📋 참가자 목록')
+      .setLabel('📋 명단 보기')
       .setStyle(ButtonStyle.Secondary)
   );
 }
