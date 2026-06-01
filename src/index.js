@@ -10,6 +10,7 @@ require('dotenv').config();
 
 const { startUnifiedPatchScheduler } = require('./services/unifiedPatchScheduler');
 const { startLckScheduler } = require('./services/chzzkService');
+const { startProjectMoonScheduler } = require('./services/projectMoonService');
 const { startEventScheduler } = require('./services/eventService');
 const { startDashboard } = require('../dashboard/server');
 const { handleMemberJoin, handleGameSelect } = require('./services/welcomeService');
@@ -72,6 +73,9 @@ client.once(Events.ClientReady, async (c) => {
 
   // 치지직 LCK 경기 시작 알림 스케줄러 시작
   await startLckScheduler(client);
+
+  // Project Moon 유튜브/치지직 알림 스케줄러 시작
+  await startProjectMoonScheduler(client);
 
   // 이벤트 알림 스케줄러 시작
   startEventScheduler(client);
