@@ -20,8 +20,8 @@ const PM_YOUTUBE_CHANNEL_ID = 'UCpqyr6h4RCXCEswHlkSjykA'; // ProjectMoon Officia
 const PM_CHZZK_CHANNEL_ID = '88ef610910ea642c198e0b05bca9967f'; // 프로젝트문 오피셜
 
 // ── 알림을 보낼 Discord 채널 (🎮 림버스 카테고리) ──
-const YOUTUBE_DISCORD_CHANNEL_ID = '1510973074839830721'; // 📺pm-유튜브알림
-const LIVE_DISCORD_CHANNEL_ID = '1510973078790733945'; // 🔴pm-방송알림
+const YOUTUBE_DISCORD_CHANNEL_ID = '1510975215314800710'; // 📝Project-Moon-유튜브
+const LIVE_DISCORD_CHANNEL_ID = '1510975219097927821'; // 🎮Project-Moon-치지직
 
 const YOUTUBE_RSS = `https://www.youtube.com/feeds/videos.xml?channel_id=${PM_YOUTUBE_CHANNEL_ID}`;
 const STATE_FILE = path.join(__dirname, '../../data/projectMoonState.json');
