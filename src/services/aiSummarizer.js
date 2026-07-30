@@ -1,4 +1,11 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { AI_MODEL } = require('../constants/aiModel');
+
+// 요약 실패 시 앞에 붙는 표식. 스케줄러가 이걸로 실패를 감지해
+// "AI가 요약했습니다" 문구 대신 실패 안내를 띄운다.
+const SUMMARY_FAILED_MARKER = '## ⚠️ AI 요약 실패';
+
+const MAX_ATTEMPTS = 3;
 
 let client = null;
 
@@ -14,23 +21,49 @@ function getClient() {
 }
 
 /**
+ * Claude 호출 + 재시도. 실패하면 마지막 에러를 throw한다.
+ * 429/5xx/네트워크만 재시도하고, 404(은퇴 모델)·401 같은 영구 오류는 즉시 포기.
+ */
+async function callClaude(anthropic, prompt, label) {
+  let lastErr = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const message = await anthropic.messages.create({
+        model: AI_MODEL,
+        max_tokens: 8000,
+        thinking: { type: 'disabled' },
+        messages: [{ role: 'user', content: prompt }],
+      });
+      return message.content[0].text;
+    } catch (err) {
+      lastErr = err;
+      const retryable = !err.status || err.status === 429 || err.status >= 500;
+      console.error(
+        `❌ [${label}] AI 요약 호출 실패 (${attempt}/${MAX_ATTEMPTS}) ` +
+          `model=${AI_MODEL} status=${err.status} type=${err.type}: ${err.message}`
+      );
+      if (!retryable) break;
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+      }
+    }
+  }
+
+  throw lastErr;
+}
+
+/**
  * 패치노트를 AI로 요약
  * 챔피언 변경, 아이템 변경, 시스템 변경으로 분류
  */
 async function summarizePatchNotes(patchData) {
   const anthropic = getClient();
   if (!anthropic) {
-    return getFallbackSummary(patchData);
+    return getFallbackSummary('ANTHROPIC_API_KEY가 설정되지 않았습니다');
   }
 
-  try {
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      messages: [
-        {
-          role: 'user',
-          content: `다음은 리그 오브 레전드(롤) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
+  const prompt = `다음은 리그 오브 레전드(롤) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
 
 **반드시 아래 형식을 지켜주세요:**
 
@@ -68,27 +101,25 @@ async function summarizePatchNotes(patchData) {
 - 이모지를 적절히 활용
 
 패치노트 내용:
-${patchData.content}`,
-        },
-      ],
-    });
+${patchData.content}`;
 
-    const summary = message.content[0].text;
-    return summary;
+  try {
+    return await callClaude(anthropic, prompt, '롤');
   } catch (err) {
-    console.error('AI 요약 실패:', err.message);
-    return getFallbackSummary(patchData);
+    return getFallbackSummary(`${err.status || 'network'} — ${err.message}`);
   }
 }
 
 /**
- * AI 실패 시 폴백 요약
+ * AI 실패 시 폴백. 원문을 그대로 쏟아내지 않고 실패를 명시한다.
+ * 예전엔 영문 원문 1500자를 붙여 보내서, 모델 오류가 "요약이 좀 이상한 글"처럼 보였다.
  */
-function getFallbackSummary(patchData) {
-  const content = patchData.content;
-  const preview = content.substring(0, 1500).replace(/\s+/g, ' ');
-
-  return `## 📋 패치노트 요약 (자동 요약 실패 - 원문 일부)\n\n${preview}\n\n... 자세한 내용은 원문을 확인해주세요.`;
+function getFallbackSummary(reason) {
+  return (
+    `${SUMMARY_FAILED_MARKER}\n\n` +
+    `AI 요약을 생성하지 못했습니다. 아래 **원문 보기** 링크를 확인해주세요.\n` +
+    `사유: \`${reason}\``
+  );
 }
 
 /**
@@ -157,8 +188,9 @@ async function extractStructuredPatchData(patchData) {
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
+      model: AI_MODEL,
+      max_tokens: 8000,
+      thinking: { type: 'disabled' },
       messages: [
         {
           role: 'user',
@@ -190,7 +222,9 @@ ${patchData.content}`,
 
     return JSON.parse(jsonStr);
   } catch (err) {
-    console.error('패치 데이터 구조화 실패:', err.message);
+    console.error(
+      `패치 데이터 구조화 실패: model=${AI_MODEL} status=${err.status} type=${err.type}: ${err.message}`
+    );
     return null;
   }
 }
@@ -202,17 +236,10 @@ ${patchData.content}`,
 async function summarizeTftPatchNotes(patchData) {
   const anthropic = getClient();
   if (!anthropic) {
-    return getFallbackSummary(patchData);
+    return getFallbackSummary('ANTHROPIC_API_KEY가 설정되지 않았습니다');
   }
 
-  try {
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      messages: [
-        {
-          role: 'user',
-          content: `다음은 전략적 팀 전투(TFT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
+  const prompt = `다음은 전략적 팀 전투(TFT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
 
 **반드시 아래 형식을 지켜주세요:**
 
@@ -248,15 +275,12 @@ async function summarizeTftPatchNotes(patchData) {
 - 이모지를 적절히 활용
 
 패치노트 내용:
-${patchData.content}`,
-        },
-      ],
-    });
+${patchData.content}`;
 
-    return message.content[0].text;
+  try {
+    return await callClaude(anthropic, prompt, 'TFT');
   } catch (err) {
-    console.error('TFT AI 요약 실패:', err.message);
-    return getFallbackSummary(patchData);
+    return getFallbackSummary(`${err.status || 'network'} — ${err.message}`);
   }
 }
 
@@ -305,17 +329,10 @@ function formatTftForDiscord(summary, patchData) {
 async function summarizeValorantPatchNotes(patchData) {
   const anthropic = getClient();
   if (!anthropic) {
-    return getFallbackSummary(patchData);
+    return getFallbackSummary('ANTHROPIC_API_KEY가 설정되지 않았습니다');
   }
 
-  try {
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      messages: [
-        {
-          role: 'user',
-          content: `다음은 발로란트(VALORANT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
+  const prompt = `다음은 발로란트(VALORANT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
 
 **반드시 아래 형식을 지켜주세요:**
 
@@ -352,15 +369,12 @@ async function summarizeValorantPatchNotes(patchData) {
 - 이모지를 적절히 활용
 
 패치노트 내용:
-${patchData.content}`,
-        },
-      ],
-    });
+${patchData.content}`;
 
-    return message.content[0].text;
+  try {
+    return await callClaude(anthropic, prompt, '발로란트');
   } catch (err) {
-    console.error('Valorant AI 요약 실패:', err.message);
-    return getFallbackSummary(patchData);
+    return getFallbackSummary(`${err.status || 'network'} — ${err.message}`);
   }
 }
 
@@ -403,6 +417,7 @@ function formatValorantForDiscord(summary, patchData) {
 }
 
 module.exports = {
+  SUMMARY_FAILED_MARKER,
   summarizePatchNotes,
   formatForDiscord,
   extractStructuredPatchData,

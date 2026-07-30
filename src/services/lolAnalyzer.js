@@ -1,4 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
+const { AI_MODEL } = require('../constants/aiModel');
 
 let client = null;
 
@@ -33,7 +34,7 @@ async function analyzeLiveGame(gameData) {
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODEL,
       max_tokens: 2000,
       messages: [
         {
@@ -106,7 +107,7 @@ async function analyzeRecentMatches(matchData) {
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: AI_MODEL,
       max_tokens: 2000,
       messages: [
         {

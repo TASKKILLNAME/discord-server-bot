@@ -9,6 +9,7 @@ const valorantCrawler = require('./valorantCrawler');
 const tftCrawler = require('./tftCrawler');
 
 const {
+  SUMMARY_FAILED_MARKER,
   summarizePatchNotes,
   formatForDiscord,
   extractStructuredPatchData,
@@ -188,10 +189,14 @@ async function syncCurrentPatch(gameKey) {
   }
 }
 
-async function sendPatchEmbeds(channel, embedData, patchData, config) {
+async function sendPatchEmbeds(channel, embedData, patchData, config, summaryFailed) {
   const alertEmbed = new EmbedBuilder()
     .setTitle(config.alertTitle)
-    .setDescription('AI가 패치노트를 분석하고 요약했습니다.')
+    .setDescription(
+      summaryFailed
+        ? '⚠️ AI 요약에 실패했습니다. 아래 원문 링크를 확인해주세요.'
+        : 'AI가 패치노트를 분석하고 요약했습니다.'
+    )
     .setColor(config.alertColor)
     .setTimestamp();
 
@@ -238,10 +243,17 @@ async function checkAndNotifyGame(client, gameKey) {
     console.log(`🤖 ${config.name} AI 요약 생성 중...`);
 
     const summary = await config.summarize(patchData);
+    const summaryFailed = summary.startsWith(SUMMARY_FAILED_MARKER);
     const embedData = config.format(summary, patchData);
 
-    // LoL 전용: 구조화된 patch.json 저장
-    if (gameKey === 'lol') {
+    if (summaryFailed) {
+      console.error(
+        `⚠️ ${config.name} AI 요약 실패 상태로 알림을 전송합니다 (원문 링크만 유효): ${patchData.url}`
+      );
+    }
+
+    // LoL 전용: 구조화된 patch.json 저장 (요약이 이미 실패했으면 같은 이유로 실패하므로 생략)
+    if (gameKey === 'lol' && !summaryFailed) {
       try {
         const structuredData = await extractStructuredPatchData(patchData);
         if (structuredData) {
@@ -270,7 +282,7 @@ async function checkAndNotifyGame(client, gameKey) {
           failCount++;
           continue;
         }
-        await sendPatchEmbeds(channel, embedData, patchData, config);
+        await sendPatchEmbeds(channel, embedData, patchData, config, summaryFailed);
         successCount++;
       } catch (err) {
         console.error(`❌ ${config.name} 패치 알림 실패 (서버: ${guildId}):`, err.message);

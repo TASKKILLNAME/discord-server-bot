@@ -4,6 +4,7 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { sanitizeForPrompt } = require('../utils/statNormalizer');
+const { AI_MODEL: MODEL } = require('../constants/aiModel');
 
 let client = null;
 
@@ -17,8 +18,6 @@ function getClient() {
   }
   return client;
 }
-
-const MODEL = 'claude-sonnet-4-6';
 
 // 사후 검증: 고elo 유저에게 부적절한 조언 감지
 function validateResponse(text, tier) {
