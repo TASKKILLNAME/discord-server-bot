@@ -7,6 +7,7 @@ const {
   isRoomOwner,
   isTempChannel,
   findExistingRoom,
+  isStaff,
 } = require('../services/tempVoiceService');
 
 module.exports = {
@@ -49,10 +50,22 @@ module.exports = {
         .addUserOption(opt =>
           opt.setName('유저').setDescription('추방할 유저').setRequired(true)
         )
+    )
+    .addSubcommand(sub =>
+      sub.setName('음소거해제')
+        .setDescription('서버 음소거/귀막기를 해제합니다 (운영진 전용)')
+        .addUserOption(opt =>
+          opt.setName('유저').setDescription('대상 (비우면 나 자신)')
+        )
     ),
 
   async execute(interaction) {
     const member = interaction.member;
+    const sub = interaction.options.getSubcommand();
+
+    // 음소거해제는 임시방/방장 제약 없이 운영진이 어디서든 쓸 수 있어야 한다
+    // (서버 음소거는 디스코드 클라이언트에서 본인이 직접 풀 수 없기 때문)
+    if (sub === '음소거해제') return this.unmute(interaction);
 
     // 음성채널에 있는지 확인
     const voiceChannel = member.voice.channel;
@@ -63,15 +76,13 @@ module.exports = {
       });
     }
 
-    // 방장인지 확인
-    if (!isRoomOwner(voiceChannel.id, member.id)) {
+    // 방장이거나 운영진이어야 함 (운영진은 어느 방이든 개입 가능)
+    if (!isRoomOwner(voiceChannel.id, member.id) && !isStaff(member)) {
       return interaction.reply({
         content: '❌ 방장만 방 설정을 변경할 수 있어요!',
         ephemeral: true,
       });
     }
-
-    const sub = interaction.options.getSubcommand();
 
     switch (sub) {
       case '이름':   return this.rename(interaction, voiceChannel);
@@ -139,6 +150,18 @@ module.exports = {
     const target = interaction.options.getUser('유저');
     const targetMember = await interaction.guild.members.fetch(target.id);
 
+    // 운영진은 자기보다 낮은 사람에게 추방당하지 않는다
+    if (
+      isStaff(targetMember) &&
+      targetMember.roles.highest.position >= interaction.member.roles.highest.position &&
+      targetMember.id !== interaction.member.id
+    ) {
+      return interaction.reply({
+        content: '❌ 운영진은 방에서 내보낼 수 없어요.',
+        ephemeral: true,
+      });
+    }
+
     if (targetMember.voice.channelId === channel.id) {
       await targetMember.voice.disconnect('방장에 의해 추방');
     }
@@ -147,6 +170,56 @@ module.exports = {
     });
     await interaction.reply({
       content: `✅ **${target.username}**님을 방에서 내보냈어요.`,
+      ephemeral: true,
+    });
+  },
+
+  async unmute(interaction) {
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({
+        content: '❌ 운영진만 사용할 수 있어요!',
+        ephemeral: true,
+      });
+    }
+
+    const target = interaction.options.getUser('유저');
+    const targetMember = target
+      ? await interaction.guild.members.fetch(target.id).catch(() => null)
+      : interaction.member;
+
+    if (!targetMember) {
+      return interaction.reply({ content: '❌ 유저를 찾을 수 없어요.', ephemeral: true });
+    }
+    if (!targetMember.voice.channelId) {
+      return interaction.reply({
+        content: '❌ 대상이 음성 채널에 접속해 있어야 해제할 수 있어요.',
+        ephemeral: true,
+      });
+    }
+    if (!targetMember.voice.serverMute && !targetMember.voice.serverDeaf) {
+      return interaction.reply({
+        content: 'ℹ️ 서버 음소거/귀막기 상태가 아니에요. (본인이 직접 끈 마이크는 직접 켜야 해요)',
+        ephemeral: true,
+      });
+    }
+
+    try {
+      await targetMember.voice.edit({
+        mute: false,
+        deaf: false,
+        reason: `${interaction.user.tag} 운영진 음소거 해제`,
+      });
+    } catch (err) {
+      return interaction.reply({
+        content: `❌ 해제 실패: ${err.message}\n(봇에 "멤버 음소거" 권한이 있는지 확인해주세요)`,
+        ephemeral: true,
+      });
+    }
+
+    await interaction.reply({
+      content: targetMember.id === interaction.member.id
+        ? '✅ 서버 음소거/귀막기를 해제했어요.'
+        : `✅ **${targetMember.user.username}**님의 서버 음소거/귀막기를 해제했어요.`,
       ephemeral: true,
     });
   },

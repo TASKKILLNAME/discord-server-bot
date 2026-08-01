@@ -1,4 +1,4 @@
-const { ChannelType, PermissionFlagsBits } = require('discord.js');
+const { ChannelType, PermissionFlagsBits, AuditLogEvent } = require('discord.js');
 
 // 활성 임시 채널 관리 (메모리)
 const activeTempChannels = new Map();
@@ -18,6 +18,29 @@ const CATEGORY_LEADER_MAP = {
   '림버스':    '림버스 방장',
 };
 
+// 운영진 판별 기준 권한
+// 음성 권한(Mute/Deafen/Move)은 방장 역할도 가질 수 있으므로 제외 —
+// 서버 운영 권한만으로 판별해야 방장이 운영진으로 오인되지 않는다.
+const STAFF_PERMISSIONS = [
+  PermissionFlagsBits.Administrator,
+  PermissionFlagsBits.ManageGuild,
+  PermissionFlagsBits.ManageRoles,
+  PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.BanMembers,
+];
+
+/**
+ * 운영진(서버장/관리자/모더레이터)인지 확인
+ * member.permissions 는 역할 기반 길드 권한만 계산 — 채널 오버라이트는 포함되지 않으므로
+ * 임시 방 오버라이트로 음소거 권한을 받은 방장은 여기 걸리지 않는다.
+ */
+function isStaff(member) {
+  if (!member) return false;
+  if (member.id === member.guild?.ownerId) return true;
+  return STAFF_PERMISSIONS.some(p => member.permissions.has(p));
+}
+
 /**
  * voiceStateUpdate 이벤트 핸들러
  */
@@ -29,6 +52,9 @@ async function handleVoiceStateUpdate(oldState, newState) {
   if (newState.channel && newState.channel.name === TRIGGER_NAME) {
     await createTempChannel(newState);
   }
+
+  // ── 권한 역전 방지: 방장이 운영진을 음소거하면 자동 해제 ──
+  await protectStaffFromVoiceModeration(oldState, newState);
 
   // ── 퇴장: 임시 채널 비었으면 15초 후 삭제 (재접속 대비) ──
   if (oldState.channel && oldState.channel.members.size === 0) {
@@ -48,6 +74,86 @@ async function handleVoiceStateUpdate(oldState, newState) {
         } catch (e) {}
       }, 15000);
     }
+  }
+}
+
+/**
+ * 자기보다 낮은 사람이 운영진을 서버 음소거/귀막기 하면 자동으로 되돌린다.
+ *
+ * 디스코드는 Mute/Deafen/Move 에 역할 계층 검사를 하지 않는다 (Kick/Ban/Timeout 과 다름).
+ * 게다가 서버 음소거는 클라이언트에서 본인이 직접 해제할 수 없어서,
+ * 방장이 관리자를 음소거하면 관리자 쪽에서 되돌릴 방법이 없다. 그 구멍을 봇이 막는다.
+ *
+ * 동급 이상 운영진이 건 제재는 정당한 조치로 보고 그대로 둔다.
+ */
+async function protectStaffFromVoiceModeration(oldState, newState) {
+  const member = newState.member;
+  if (!member || member.user.bot) return;
+  if (!newState.channelId) return;
+
+  const mutedNow = newState.serverMute && !oldState.serverMute;
+  const deafenedNow = newState.serverDeaf && !oldState.serverDeaf;
+  if (!mutedNow && !deafenedNow) return;
+  if (!isStaff(member)) return;
+
+  const me = newState.guild.members.me;
+  if (!me?.permissions.has(PermissionFlagsBits.MuteMembers)) {
+    console.warn('⚠️ 음소거 자동 해제 불가 — 봇에 "멤버 음소거" 권한이 없습니다.');
+    return;
+  }
+
+  // 감사 로그 기록이 살짝 늦게 붙으므로 잠깐 대기
+  await new Promise(r => setTimeout(r, 1200));
+  const executor = await findVoiceModerationExecutor(newState.guild, member.id);
+
+  // 본인이 스스로 건 것 → 존중
+  if (executor && executor.id === member.id) return;
+  // 동급 이상 운영진의 정당한 조치 → 존중
+  if (
+    executor &&
+    isStaff(executor) &&
+    executor.roles.highest.position >= member.roles.highest.position
+  ) return;
+
+  const patch = { reason: '권한 역전 방지 — 운영진에 대한 음성 제재 자동 해제' };
+  if (mutedNow) patch.mute = false;
+  if (deafenedNow) patch.deaf = false;
+
+  try {
+    await member.voice.edit(patch);
+
+    const who = executor ? executor.user.tag : '알 수 없음';
+    const what = mutedNow && deafenedNow ? '음소거/귀막기'
+      : mutedNow ? '음소거' : '귀막기';
+    console.log(`🛡️ 권한 역전 차단: ${who} → ${member.user.tag} ${what} 자동 해제`);
+
+    try {
+      await newState.channel.send(
+        `🛡️ ${member} 님은 운영진이라 하위 권한자가 ${what}할 수 없어요. 자동으로 해제했습니다.`
+      );
+    } catch (e) {}
+  } catch (err) {
+    console.error('음성 제재 자동 해제 실패:', err.message);
+  }
+}
+
+/**
+ * 감사 로그에서 음소거/귀막기를 건 사람을 찾는다. 못 찾으면 null.
+ */
+async function findVoiceModerationExecutor(guild, targetId) {
+  if (!guild.members.me?.permissions.has(PermissionFlagsBits.ViewAuditLog)) return null;
+
+  try {
+    const logs = await guild.fetchAuditLogs({ type: AuditLogEvent.MemberUpdate, limit: 6 });
+    const entry = logs.entries.find(e =>
+      e.target?.id === targetId &&
+      Date.now() - e.createdTimestamp < 15000 &&
+      e.changes?.some(c => c.key === 'mute' || c.key === 'deaf')
+    );
+    if (!entry?.executor) return null;
+    return await guild.members.fetch(entry.executor.id).catch(() => null);
+  } catch (err) {
+    return null;
   }
 }
 
@@ -206,6 +312,7 @@ async function cleanupTempChannels(client) {
 module.exports = {
   handleVoiceStateUpdate,
   activeTempChannels,
+  isStaff,
   isRoomOwner,
   isTempChannel,
   findExistingRoom,

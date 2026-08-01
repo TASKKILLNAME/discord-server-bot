@@ -4,8 +4,11 @@ const { REST, Routes } = require('discord.js');
 const rest = new REST().setToken(process.env.DISCORD_TOKEN);
 const GUILD_ID = '1268523142897209405';
 
-// Move Members(16777216) + Mute Members(4194304) + Deafen Members(8388608)
-const LEADER_PERMS = String(16777216 + 4194304 + 8388608);
+// 방장 역할은 길드 전역 권한을 갖지 않는다.
+// Move/Mute/Deafen 을 역할 권한으로 주면 방장이 서버 어디서든, 심지어 관리자까지
+// 음소거할 수 있다 (디스코드는 음성 제재에 역할 계층 검사를 하지 않음).
+// 실제 방장 권한은 tempVoiceService 가 방 생성 시 채널 오버라이트로 부여한다.
+const LEADER_PERMS = '0';
 
 const LEADER_ROLES = [
   {
