@@ -4,7 +4,7 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 const { sanitizeForPrompt } = require('../utils/statNormalizer');
-const { AI_MODEL: MODEL } = require('../constants/aiModel');
+const { AI_MODEL: MODEL, getResponseText } = require('../constants/aiModel');
 
 let client = null;
 
@@ -72,7 +72,7 @@ async function getMatchAnalysis(normalizedData, tier) {
       messages: [{ role: 'user', content: JSON.stringify(sanitized) }],
     });
 
-    const text = res.content[0].text;
+    const text = getResponseText(res);
     return validateResponse(text, tier);
   } catch (err) {
     console.error('AI 매치 분석 실패:', err.message);
@@ -107,7 +107,7 @@ async function getMetaCoaching(playStyle, patchChanges, tier) {
       messages: [{ role: 'user', content: JSON.stringify({ playStyle, patchChanges, tier }) }],
     });
 
-    return validateResponse(res.content[0].text, tier);
+    return validateResponse(getResponseText(res), tier);
   } catch (err) {
     console.error('AI 메타 분석 실패:', err.message);
     return getFallbackMeta(playStyle);

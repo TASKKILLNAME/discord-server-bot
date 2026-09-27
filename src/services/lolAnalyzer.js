@@ -1,5 +1,5 @@
 const Anthropic = require('@anthropic-ai/sdk');
-const { AI_MODEL } = require('../constants/aiModel');
+const { AI_MODEL, getResponseText } = require('../constants/aiModel');
 
 let client = null;
 
@@ -70,7 +70,7 @@ ${redTeamStr}
       ],
     });
 
-    return message.content[0].text;
+    return getResponseText(message);
   } catch (err) {
     console.error('AI 실시간 분석 실패:', err.message);
     return getFallbackLiveAnalysis(gameData);
@@ -151,7 +151,7 @@ ${matchesStr}
       ],
     });
 
-    return message.content[0].text;
+    return getResponseText(message);
   } catch (err) {
     console.error('AI 전적 분석 실패:', err.message);
     return getFallbackMatchAnalysis(matchData);

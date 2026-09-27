@@ -1,6 +1,6 @@
 const { buildSummaryPrompt, sectionFields } = require('./patchLayout');
 const Anthropic = require('@anthropic-ai/sdk');
-const { AI_MODEL } = require('../constants/aiModel');
+const { AI_MODEL, getResponseText } = require('../constants/aiModel');
 
 // 요약 실패 시 앞에 붙는 표식. 스케줄러가 이걸로 실패를 감지해
 // "AI가 요약했습니다" 문구 대신 실패 안내를 띄운다.
@@ -36,7 +36,7 @@ async function callClaude(anthropic, prompt, label) {
         thinking: { type: 'disabled' },
         messages: [{ role: 'user', content: prompt }],
       });
-      return message.content[0].text;
+      return getResponseText(message);
     } catch (err) {
       lastErr = err;
       const retryable = !err.status || err.status === 429 || err.status >= 500;
@@ -141,7 +141,7 @@ ${patchData.content}`,
       ],
     });
 
-    const jsonStr = message.content[0].text
+    const jsonStr = getResponseText(message)
       .replace(/```json\n?/g, '')
       .replace(/```\n?/g, '')
       .trim();
