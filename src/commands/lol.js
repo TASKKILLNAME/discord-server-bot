@@ -5,11 +5,9 @@ const {
   ChannelType,
 } = require('discord.js');
 const {
-  fetchLiveGameData,
   fetchRecentMatchData,
 } = require('../services/riotService');
 const {
-  analyzeLiveGame,
   analyzeRecentMatches,
   parseAnalysisToFields,
 } = require('../services/lolAnalyzer');
@@ -27,9 +25,9 @@ const {
 } = require('../services/lolTrackerService');
 const {
   buildRecentMatchLayout,
-  buildLiveGameLayout,
-  buildSingleMatchLayout,
 } = require('../services/matchLayoutService');
+const { scanTeammates, classifyError: classifyRealtimeError } = require('../services/realtimeService');
+const { buildRealtimeEmbed, safeText } = require('../services/realtimeLayoutService');
 const {
   USAGE_TEXT: PREDICTION_USAGE_TEXT,
   PredictionError,
@@ -88,7 +86,7 @@ module.exports = {
     .addSubcommand((sub) =>
       sub
         .setName('실시간')
-        .setDescription('실시간 게임 정보를 AI로 분석합니다')
+        .setDescription('본인을 제외한 아군 4명의 라인·주챔·최근 전적을 확인합니다')
         .addStringOption((opt) =>
           opt.setName('소환사명').setDescription('게임 이름 (예: Hide on bush)').setRequired(true)
         )
@@ -305,63 +303,24 @@ module.exports = {
     await interaction.deferReply();
 
     try {
-      const loadingEmbed = new EmbedBuilder()
-        .setTitle('🔍 실시간 게임 정보를 가져오는 중...')
-        .setDescription(
-          `**${gameName}#${tagLine}** 소환사를 검색하고 AI가 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)`
-        )
-        .setColor(0xffa500);
-      await interaction.editReply({ embeds: [loadingEmbed] });
-
-      const gameData = await fetchLiveGameData(gameName, tagLine);
-
-      // 게임 중이 아니면 → 최근 1게임으로 대체
-      if (gameData.notInGame) {
-        const recentEmbed = new EmbedBuilder()
-          .setTitle('💤 현재 게임 중이 아닙니다')
-          .setDescription(
-            `**${gameName}#${tagLine}** 소환사가 게임 중이 아닙니다.\n최근 게임을 대신 분석합니다...`
-          )
-          .setColor(0x808080);
-        await interaction.editReply({ embeds: [recentEmbed] });
-
-        // 최근 1게임 분석으로 대체
-        const matchData = await fetchRecentMatchData(gameName, tagLine, 1);
-        if (matchData.matches.length === 0) {
-          return interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle('❌ 전적을 찾을 수 없습니다')
-                .setDescription('최근 게임 기록이 없습니다.')
-                .setColor(0xff0000),
-            ],
-          });
-        }
-
-        const analysis = await analyzeRecentMatches(matchData);
-        const fields = parseAnalysisToFields(analysis);
-
-        const layout = buildSingleMatchLayout(matchData, fields, gameName, tagLine);
-        return interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
-      }
-
-      // 실시간 게임 분석
-      const analysis = await analyzeLiveGame(gameData);
-      const analysisFields = parseAnalysisToFields(analysis);
-
-      const layout = buildLiveGameLayout(gameData, analysisFields, gameName, tagLine);
-      await interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
-    } catch (err) {
-      console.error('실시간 조회 오류:', err);
-      const errorDetail = err.userMessage || err.message || '알 수 없는 오류';
-      const statusCode = err.response?.status ? ` (HTTP ${err.response.status})` : '';
       await interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 오류 발생')
-            .setDescription(`${errorDetail}${statusCode}`)
-            .setColor(0xff0000),
-        ],
+        embeds: [new EmbedBuilder().setTitle('🔍 아군 전적 확인 중')
+          .setDescription(`${safeText(gameName)}#${safeText(tagLine)} · 본인을 제외한 아군을 확인합니다.`)
+          .setColor(0xffa500)],
+        components: [], allowedMentions: NO_MENTIONS,
+      });
+      const scan = await scanTeammates(gameName, tagLine);
+      await interaction.editReply({
+        embeds: [buildRealtimeEmbed(scan)], components: [], allowedMentions: NO_MENTIONS,
+      });
+    } catch (err) {
+      const error = classifyRealtimeError(err);
+      // Axios errors may contain X-Riot-Token; never log the raw error here.
+      console.error('아군 조회 오류:', error.code);
+      await interaction.editReply({
+        embeds: [new EmbedBuilder().setTitle('아군 분석 불가')
+          .setDescription(error.userMessage).setColor(0xff0000)],
+        components: [], allowedMentions: NO_MENTIONS,
       });
     }
   },

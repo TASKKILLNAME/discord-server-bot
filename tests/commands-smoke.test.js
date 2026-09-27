@@ -44,9 +44,10 @@ test('모든 slash command module이 로드되고 이름이 중복되지 않는�
 });
 
 test('[KNOWN DEFECT] source의 정적 local require 중 dashboard patchScheduler 하나가 해석되지 않는다', () => {
-  const sourceFiles = walk(ROOT).filter((file) =>
-    file.endsWith('.js') && !file.includes(`${path.sep}tests${path.sep}`)
-  );
+  // Scan this checkout's application sources, not nested editor worktrees.
+  const sourceFiles = ['src', 'dashboard', 'scripts']
+    .flatMap((directory) => walk(path.join(ROOT, directory)))
+    .filter((file) => file.endsWith('.js'));
   const missing = [];
   const requirePattern = /require\(\s*['"](\.[^'"]+)['"]\s*\)/g;
 

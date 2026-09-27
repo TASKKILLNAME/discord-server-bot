@@ -56,10 +56,9 @@ function loadLol(calls) {
   });
 }
 
-test('/전적 실시간·최근전적은 크레딧 확인 없이 AI 분석 결과를 응답한다', async () => {
+test('/전적 최근전적은 크레딧 확인 없이 AI 분석 결과를 응답한다', async () => {
   for (const [subcommand, analyzer, component] of [
     ['최근전적', 'analyzeRecentMatches', 'recent'],
-    ['실시간', 'analyzeLiveGame', 'live'],
   ]) {
     const calls = [];
     const command = loadLol(calls);

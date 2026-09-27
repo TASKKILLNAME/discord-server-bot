@@ -149,9 +149,9 @@ async function getAccountByRiotId(gameName, tagLine, options = {}) {
 /**
  * 실시간 게임 조회 (Spectator V5)
  */
-async function getLiveGame(puuid) {
+async function getLiveGame(puuid, options = {}) {
   const url = `${PLATFORM_URL}/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(puuid)}`;
-  return await riotApiRequest(url); // null이면 게임 중 아님
+  return await riotApiRequest(url, undefined, { signal: options.signal }); // null이면 게임 중 아님
 }
 
 /**
@@ -165,9 +165,12 @@ async function getSummonerByPuuid(puuid) {
 /**
  * 랭크 정보 조회 (PUUID 기반)
  */
-async function getRankByPuuid(puuid) {
+async function getRankByPuuid(puuid, options = {}) {
   const url = `${PLATFORM_URL}/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`;
-  const data = await riotApiRequest(url);
+  const data = await riotApiRequest(url, undefined, { signal: options.signal });
+  if (options.throwOnNotFound && !Array.isArray(data)) {
+    throw new Error('랭크 정보를 조회하지 못했습니다.');
+  }
   return data || [];
 }
 
