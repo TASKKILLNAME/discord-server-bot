@@ -1,5 +1,7 @@
+const { SPY_CONFIG, calculateSpyScore } = require('./spyPrediction');
+
 // ============================================
-// 🧮 /전적 실시간 게임 시작 브리핑 — 순수 계산 (API·Discord·AI 무관)
+// 🧮 /전적 실시간 — 순수 계산 (API·Discord 무관)
 //
 // 같은 입력이면 항상 같은 숫자가 나오도록 비율·평균은 정수(퍼밀·10분의 1·100분의 1)로 계산한다.
 // 규칙 설명: LIVE_BRIEFING.md
@@ -11,7 +13,7 @@ const BRIEFING_CONFIG = Object.freeze({
   maxGames: 20, // 참가자별 목표 표본 (동일 큐 완료 경기)
   quickGames: 5, // 1차로 모든 참가자에게 확보하는 빠른 표본
   smallSampleThreshold: 5, // 표시용 '표본 적음' 기준 (통계적 신뢰도 아님)
-  frequentChampionGames: 5, // 상대 후보의 '자주 사용' 사실을 표시할 최소 경기 수
+  recentIcons: 10, // 최근 경기 챔피언 아이콘 수
 
   // 역할 배치 점수 (휴리스틱이며 확률이 아니다)
   roleWeights: Object.freeze({
@@ -23,6 +25,18 @@ const BRIEFING_CONFIG = Object.freeze({
   }),
   roleMargin: 1, // 최선 배치와 '이 사람만 다른 역할인 최선 배치'의 점수 차가 이보다 작으면 불확실
   roleMinEvidenceGames: 2, // 포지션이 기록된 과거 경기가 이보다 적으면 (강타 정글 제외) 불확실
+
+  // 태그
+  mainRoleMinGames: 5, // 주 포지션 판정 최소 경기
+  mainRoleShare: 0.6, // 주 포지션 판정 최소 비율
+  streakTagMin: 3, // #N연승/#N연패 표시 최소
+  masteryTagGames: 10, // #장인: 수집 경기 중 현재 챔피언 10경기 이상이면서
+  masteryTagShare: 0.5, //        절반 이상
+
+  // 첩자 (spyPrediction의 경기별 점수를 재사용, 재미용 통계)
+  spyMinSamples: 5, // 개인 첩자 판정률을 보여줄 최소 경기
+  spyWarnPermil: 400, // #첩자주의 기준 (40%)
+  spyTeamMinPlayers: 3, // 팀 첩자 존재 확률을 낼 최소 인원 (판정률이 있는 사람)
 });
 
 const ROLES = Object.freeze(['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY']);
@@ -34,7 +48,6 @@ const ROLE_LABELS = Object.freeze({
   UTILITY: '서포터',
 });
 const ROLE_LEVEL_LABELS = Object.freeze({
-  confirmed: '확인됨',
   user: '사용자 지정',
   estimated: '추정',
   uncertain: '불확실',
@@ -58,9 +71,18 @@ const OTHER_QUEUE_NAMES = new Map([
   [900, 'U.R.F.'],
   [1700, '아레나'],
 ]);
+const MAP_NAMES = new Map([
+  [11, '소환사의 협곡'],
+  [12, '칼바람 나락'],
+  [30, '아레나'],
+]);
 
 function queueName(queueId) {
   return ROLE_QUEUES.get(queueId) || OTHER_QUEUE_NAMES.get(queueId) || `큐 ${queueId}`;
+}
+
+function mapName(mapId) {
+  return MAP_NAMES.get(mapId) || null;
 }
 
 /** 이 큐의 랭크 엔트리 종류. 랭크 큐가 아니면 솔로랭크를 참고값으로 쓴다. */
@@ -95,7 +117,7 @@ function isCount(value) {
 }
 
 /**
- * 매치 상세를 브리핑에 필요한 필드만 남긴 형태로 줄인다. 구조가 깨졌으면 MatchDataError.
+ * 매치 상세를 필요한 필드만 남긴 형태로 줄인다. 구조가 깨졌으면 MatchDataError.
  * 참가자별 값 검증은 evaluateMatchFor에서 한다 (한 사람 값이 이상해도 다른 사람 표본은 살린다).
  */
 function compactMatch(detail, expectedMatchId) {
@@ -113,10 +135,12 @@ function compactMatch(detail, expectedMatchId) {
     if (!p || typeof p.puuid !== 'string' || !p.puuid) continue;
     participants[p.puuid] = {
       championId: p.championId,
+      teamId: p.teamId,
       win: p.win,
       kills: p.kills,
       deaths: p.deaths,
       assists: p.assists,
+      goldEarned: p.goldEarned,
       teamPosition: typeof p.teamPosition === 'string' ? p.teamPosition : '',
       earlySurrender: p.gameEndedInEarlySurrender === true,
     };
@@ -125,10 +149,35 @@ function compactMatch(detail, expectedMatchId) {
   return {
     matchId: expectedMatchId,
     queueId: info.queueId,
+    gameDuration: Number.isFinite(info.gameDuration) ? info.gameDuration : null,
     gameEndTimestamp: Number.isFinite(info.gameEndTimestamp) ? info.gameEndTimestamp : null,
     endOfGameResult: typeof info.endOfGameResult === 'string' ? info.endOfGameResult : null,
     participants,
   };
+}
+
+/**
+ * 그 경기에서 이 플레이어가 '첩자'(부진) 기준을 넘었는지. spyPrediction과 같은 점수식·기준을 쓴다.
+ * 판단할 수 없으면 null.
+ */
+function spyVerdict(match, p) {
+  const all = Object.values(match.participants);
+  const teamKills = all
+    .filter((x) => x.teamId === p.teamId)
+    .reduce((sum, x) => sum + (isCount(x.kills) ? x.kills : 0), 0);
+  const opponent = ROLES.includes(p.teamPosition)
+    ? all.find((x) => x.teamId !== p.teamId && x.teamPosition === p.teamPosition)
+    : null;
+  const score = calculateSpyScore({
+    kills: p.kills,
+    deaths: p.deaths,
+    assists: p.assists,
+    teamKills,
+    durationSec: match.gameDuration,
+    gold: p.goldEarned,
+    laneOpponentGold: opponent?.goldEarned,
+  });
+  return score === null ? null : score >= SPY_CONFIG.scoreThreshold;
 }
 
 /**
@@ -162,6 +211,7 @@ function evaluateMatchFor(match, puuid, { queueId, cutoffMs }) {
       assists: p.assists,
       teamPosition: ROLES.includes(p.teamPosition) ? p.teamPosition : null,
       endMs: match.gameEndTimestamp,
+      spy: spyVerdict(match, p),
     },
   };
 }
@@ -226,6 +276,15 @@ function computeStreak(results) {
   return count > 0 ? { win: first === 'W', count, atLeast: true } : null;
 }
 
+/** 주 포지션: 포지션 기록 mainRoleMinGames 이상, 한 포지션 비율 mainRoleShare 이상 */
+function mainRoleOf(positions) {
+  const valid = ROLES.reduce((s, r) => s + positions[r], 0);
+  if (valid < BRIEFING_CONFIG.mainRoleMinGames) return null;
+  let best = null;
+  for (const r of ROLES) if (!best || positions[r] > positions[best]) best = r;
+  return positions[best] >= valid * BRIEFING_CONFIG.mainRoleShare ? best : null;
+}
+
 /**
  * history: { status, ids, entries: [{ matchId, state, reason, game }] } (ids와 같은 최신순)
  */
@@ -258,6 +317,8 @@ function aggregateHistory(history, currentChampionId) {
   const all = summarizeGames(games);
   const champion = summarizeGames(games.filter((g) => g.championId === currentChampionId));
   const excludedTotal = Object.values(excluded).reduce((s, n) => s + n, 0);
+  const spyGames = games.filter((g) => g.spy !== null && g.spy !== undefined);
+  const spies = spyGames.filter((g) => g.spy).length;
 
   return {
     idsFound: ids.length,
@@ -270,6 +331,13 @@ function aggregateHistory(history, currentChampionId) {
     results,
     streak: computeStreak(results),
     champion,
+    mainRole: mainRoleOf(all.positions),
+    recent: games.slice(0, BRIEFING_CONFIG.recentIcons).map((g) => ({ championId: g.championId, win: g.win })),
+    spy: {
+      samples: spyGames.length,
+      spies,
+      ratePermil: spyGames.length >= BRIEFING_CONFIG.spyMinSamples ? Math.round((spies * 1000) / spyGames.length) : null,
+    },
     smallSample: games.length < BRIEFING_CONFIG.smallSampleThreshold,
     complete: pending === 0 && failed === 0,
   };
@@ -310,12 +378,8 @@ const ROLE_PERMUTATIONS = permutations(ROLES);
 function describeRoleEvidence(player, role, validAll, validChamp) {
   const reasons = [];
   const agg = player.stats;
-  if (validAll > 0) {
-    reasons.push(`수집 경기 중 ${ROLE_LABELS[role]} ${agg.positions[role]}/${validAll}경기`);
-  }
-  if (validChamp > 0) {
-    reasons.push(`현재 챔피언 경기 중 ${ROLE_LABELS[role]} ${agg.champion.positions[role]}/${validChamp}경기`);
-  }
+  if (validAll > 0) reasons.push(`수집 경기 중 ${ROLE_LABELS[role]} ${agg.positions[role]}/${validAll}경기`);
+  if (validChamp > 0) reasons.push(`현재 챔피언 경기 중 ${ROLE_LABELS[role]} ${agg.champion.positions[role]}/${validChamp}경기`);
   if (player.hasSmite) reasons.push('강타 보유');
   if (reasons.length === 0) reasons.push('과거 포지션 기록 없음');
   return reasons;
@@ -323,7 +387,8 @@ function describeRoleEvidence(player, role, validAll, validChamp) {
 
 /**
  * 한 팀 5명의 역할 배치. fixed: { [slot]: role } (사용자 지정)
- * 반환: Map(slot → { role, level, reasons })
+ * 반환: Map(slot → { role, level, slotRole, reasons })
+ *  - slotRole: 최선 배치에서 배정된 자리 (화면 행 정렬용, 불확실해도 채운다)
  *  - 최선 배치에서 그 사람만 다른 역할로 바꾼 최선 배치와의 점수 차가 roleMargin 미만이면 불확실
  *  - 본인 근거(포지션 기록 roleMinEvidenceGames 이상, 또는 강타+정글)가 없으면 불확실
  *  - 동점 배치는 차이가 0이므로 항상 불확실
@@ -331,7 +396,7 @@ function describeRoleEvidence(player, role, validAll, validChamp) {
 function assignTeamRoles(team, fixed = {}) {
   const result = new Map();
   if (team.length !== 5) {
-    for (const p of team) result.set(p.slot, { role: null, level: 'unsupported', reasons: [] });
+    for (const p of team) result.set(p.slot, { role: null, slotRole: null, level: 'unsupported', reasons: [] });
     return result;
   }
 
@@ -340,7 +405,7 @@ function assignTeamRoles(team, fixed = {}) {
     scored.every(({ player }, i) => !fixed[player.slot] || fixed[player.slot] === perm[i])
   );
   if (allowed.length === 0) {
-    for (const p of team) result.set(p.slot, { role: null, level: 'uncertain', reasons: ['지정한 포지션이 서로 겹침'] });
+    for (const p of team) result.set(p.slot, { role: null, slotRole: null, level: 'uncertain', reasons: ['지정한 포지션이 서로 겹침'] });
     return result;
   }
 
@@ -353,7 +418,7 @@ function assignTeamRoles(team, fixed = {}) {
   scored.forEach(({ player, validAll, validChamp }, i) => {
     const role = best[i];
     if (fixed[player.slot]) {
-      result.set(player.slot, { role, level: 'user', reasons: ['조회자가 직접 지정'] });
+      result.set(player.slot, { role, slotRole: role, level: 'user', reasons: ['조회자가 직접 지정'] });
       return;
     }
     let alternative = -Infinity;
@@ -365,9 +430,9 @@ function assignTeamRoles(team, fixed = {}) {
       validAll >= BRIEFING_CONFIG.roleMinEvidenceGames || (role === 'JUNGLE' && player.hasSmite);
     const reasons = describeRoleEvidence(player, role, validAll, validChamp);
     if (!hasEvidence || gap < BRIEFING_CONFIG.roleMargin) {
-      result.set(player.slot, { role: null, level: 'uncertain', reasons });
+      result.set(player.slot, { role: null, slotRole: role, level: 'uncertain', reasons });
     } else {
-      result.set(player.slot, { role, level: 'estimated', reasons });
+      result.set(player.slot, { role, slotRole: role, level: 'estimated', reasons });
     }
   });
   return result;
@@ -380,27 +445,33 @@ function assignTeamRoles(team, fixed = {}) {
 /**
  * model: { game, participants, targetPuuid } (participants[].stats = aggregateHistory 결과)
  * roleOverride: 조회 대상의 포지션 직접 지정 (ROLES 중 하나) — 상대 역할은 확정하지 않는다
+ * 조회 대상을 찾지 못해도 두 팀의 역할 배치는 계산한다 (화면 행 정렬용).
  */
 function buildPerspective(model, { roleOverride = null } = {}) {
   const { game, participants, targetPuuid } = model;
   const target = targetPuuid ? participants.find((p) => p.puuid && p.puuid === targetPuuid) : null;
+  const supported = isRoleAnalysisSupported(game, participants);
+  const teamIds = [...new Set(participants.map((p) => p.teamId))];
+
+  const roles = new Map();
+  for (const teamId of teamIds) {
+    const team = participants.filter((p) => p.teamId === teamId);
+    if (!supported) {
+      for (const p of team) roles.set(p.slot, { role: null, slotRole: null, level: 'unsupported', reasons: [] });
+      continue;
+    }
+    const fixed = target && target.teamId === teamId && roleOverride && ROLES.includes(roleOverride)
+      ? { [target.slot]: roleOverride }
+      : {};
+    for (const [slot, r] of assignTeamRoles(team, fixed)) roles.set(slot, r);
+  }
+
   if (!target) {
-    return { mode: 'general', reason: 'TARGET_NOT_FOUND', target: null };
+    return { mode: 'general', reason: 'TARGET_NOT_FOUND', target: null, roles, roleSupported: supported };
   }
 
   const allies = participants.filter((p) => p.teamId === target.teamId);
   const enemies = participants.filter((p) => p.teamId !== target.teamId);
-  const enemyTeamId = enemies[0]?.teamId ?? null;
-  const supported = isRoleAnalysisSupported(game, participants);
-
-  let roles = new Map();
-  if (supported) {
-    const fixed = roleOverride && ROLES.includes(roleOverride) ? { [target.slot]: roleOverride } : {};
-    roles = new Map([...assignTeamRoles(allies, fixed), ...assignTeamRoles(enemies)]);
-  } else {
-    for (const p of participants) roles.set(p.slot, { role: null, level: 'unsupported', reasons: [] });
-  }
-
   const myRole = roles.get(target.slot);
   const withRole = (list, role) =>
     list.filter((p) => {
@@ -412,222 +483,145 @@ function buildPerspective(model, { roleOverride = null } = {}) {
   if (!supported) {
     lane = { type: 'none', note: '역할 분석 대상 모드가 아니어서 라인 분석을 생략했습니다.' };
   } else if (!myRole.role) {
-    lane = { type: 'none', note: '포지션 확인 불가 — 라인 분석을 생략하고 일반 정보만 표시합니다.' };
+    lane = { type: 'none', note: '포지션 확인 불가 — 라인 분석을 생략합니다.' };
   } else if (myRole.role === 'TOP' || myRole.role === 'MIDDLE') {
-    const opponents = withRole(enemies, myRole.role);
-    lane = {
-      type: 'solo',
-      opponents,
-      note: opponents.length === 0 ? `상대 ${ROLE_LABELS[myRole.role]} 후보 포지션 확인 불가` : null,
-    };
+    lane = { type: 'solo', opponents: withRole(enemies, myRole.role) };
   } else if (myRole.role === 'BOTTOM' || myRole.role === 'UTILITY') {
     const allyDuo = [...withRole(allies, 'BOTTOM'), ...withRole(allies, 'UTILITY')];
     if (!allyDuo.includes(target)) allyDuo.unshift(target);
-    const enemyDuo = [...withRole(enemies, 'BOTTOM'), ...withRole(enemies, 'UTILITY')];
-    lane = {
-      type: 'bottom',
-      allyDuo,
-      opponents: enemyDuo,
-      note: enemyDuo.length < 2 ? '상대 바텀 듀오 일부 포지션 확인 불가' : null,
-    };
+    lane = { type: 'bottom', allyDuo, opponents: [...withRole(enemies, 'BOTTOM'), ...withRole(enemies, 'UTILITY')] };
   } else {
-    const opponents = withRole(enemies, 'JUNGLE');
-    lane = {
-      type: 'jungle',
-      opponents,
-      note: '정글은 맞라인 상대가 아닙니다. 상대 정글의 현재 위치·동선은 추측하지 않습니다.',
-    };
+    lane = { type: 'jungle', opponents: withRole(enemies, 'JUNGLE') };
   }
 
   return {
     mode: 'personal',
     target,
     allyTeamId: target.teamId,
-    enemyTeamId,
+    enemyTeamId: enemies[0]?.teamId ?? null,
     allies,
     enemies,
     roles,
     myRole,
-    roleOverride: myRole.level === 'user' ? myRole.role : null,
     roleSupported: supported,
     lane,
   };
 }
 
 // ============================================
-// 🧩 조합 특성 · 주의할 점 · 운영 선택지
+// 🏷️ 태그 · 티어 · 팀 요약
 // ============================================
 
 /**
- * knowledge.profileFor(championId) → Data Dragon 기반 프로필 또는 null
- * knowledge.verifiedTraitsFor(dataId) → 검수 완료 특성 { engage: {...} } 또는 {}
+ * PS식 태그. 모두 입력 데이터에서 나온 사실만 쓴다.
+ *  - #라인꼬임: 주 포지션이 있는데 이번 판 추정 포지션이 다름
+ *  - #라인꼬임?: 같은 팀에 주 포지션이 같은 사람이 있음 (누군가는 주 포지션이 아닐 수 있음)
+ *  - #N연승 / #N연패: 수집 경기 기준 3연속 이상 (누락이 끼면 '+')
+ *  - #장인: 수집 경기 중 현재 챔피언 10경기 이상이면서 절반 이상
+ *  - #첩자주의: 수집 경기 첩자 판정률 40% 이상 (재미용)
  */
-function summarizeTeamComposition(players, knowledge) {
-  const hardCc = [];
-  const damage = { physical: 0, magic: 0, mixed: 0, unknown: 0 };
-  const curated = { engage: [], protect: [], frontline: [], poke: [] };
-  for (const p of players) {
-    const profile = knowledge.profileFor(p.championId);
-    if (!profile) {
-      damage.unknown++;
-      continue;
-    }
-    if (profile.hardCc.length > 0) {
-      hardCc.push({ championName: p.championName, skills: profile.hardCc });
-    }
-    damage[profile.damageLean || 'unknown']++;
-    const traits = knowledge.verifiedTraitsFor(profile.id);
-    for (const key of Object.keys(curated)) {
-      if (traits[key]?.value === true) curated[key].push({ championName: p.championName, evidence: traits[key].evidence });
+function playerTags(player, roleInfo, teammates) {
+  const s = player.stats;
+  const tags = [];
+  if (!s) return tags;
+  const c = BRIEFING_CONFIG;
+
+  if (s.mainRole) {
+    if (roleInfo?.role && roleInfo.level === 'estimated' && roleInfo.role !== s.mainRole) {
+      tags.push({ text: '#라인꼬임', tone: 'bad' });
+    } else if (teammates.some((t) => t !== player && t.stats?.mainRole === s.mainRole)) {
+      tags.push({ text: '#라인꼬임?', tone: 'bad' });
     }
   }
-  const known = players.length - damage.unknown;
-  return {
-    hardCc,
-    damage,
-    known,
-    total: players.length,
-    curated,
-    // 자료가 있는 챔피언이 4명 미만이면 팀 전체 결론을 유보한다
-    conclusive: known >= 4,
-  };
+  if (s.streak && s.streak.count >= c.streakTagMin) {
+    const label = `#${s.streak.count}${s.streak.win ? '연승' : '연패'}${s.streak.atLeast ? '+' : ''}`;
+    tags.push({ text: label, tone: s.streak.win ? 'good' : 'bad' });
+  }
+  if (s.champion.games >= c.masteryTagGames && s.champion.games >= s.collected * c.masteryTagShare) {
+    tags.push({ text: '#장인', tone: 'good' });
+  }
+  if (s.spy.ratePermil !== null && s.spy.ratePermil >= c.spyWarnPermil) {
+    tags.push({ text: '#첩자주의', tone: 'bad' });
+  }
+  return tags;
 }
 
-function roleLabelFor(perspective, player) {
-  const r = perspective.roles.get(player.slot);
-  return r?.role ? ROLE_LABELS[r.role] : '포지션 불확실';
+const TIERS = ['IRON', 'BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'EMERALD', 'DIAMOND'];
+const APEX_TIERS = ['MASTER', 'GRANDMASTER', 'CHALLENGER'];
+const DIVISIONS = ['IV', 'III', 'II', 'I'];
+const TIER_KO = {
+  IRON: '아이언', BRONZE: '브론즈', SILVER: '실버', GOLD: '골드', PLATINUM: '플래티넘',
+  EMERALD: '에메랄드', DIAMOND: '다이아몬드', MASTER: '마스터', GRANDMASTER: '그랜드마스터', CHALLENGER: '챌린저',
+};
+const TIER_SHORT = {
+  IRON: 'I', BRONZE: 'B', SILVER: 'S', GOLD: 'G', PLATINUM: 'P', EMERALD: 'E', DIAMOND: 'D',
+  MASTER: 'M', GRANDMASTER: 'GM', CHALLENGER: 'C',
+};
+const DIVISION_NUMBER = { IV: 4, III: 3, II: 2, I: 1 };
+
+/** 평균 계산용 점수: 아이언 IV 0LP = 0, 한 구간 100, 마스터 이상은 2800 + LP */
+function tierScore(rank) {
+  if (rank?.status !== 'ranked') return null;
+  const lp = Number.isFinite(rank.lp) ? Math.max(0, rank.lp) : 0;
+  if (APEX_TIERS.includes(rank.tier)) return 2800 + lp;
+  const t = TIERS.indexOf(rank.tier);
+  const d = DIVISIONS.indexOf(rank.division);
+  if (t < 0 || d < 0) return null;
+  return t * 400 + d * 100 + Math.min(lp, 99);
 }
 
-function firstOrNull(list) {
-  return list && list.length > 0 ? list[0] : null;
+function tierFromScore(score) {
+  if (score >= 2800) return { tier: 'MASTER', division: null, label: '마스터+', badge: 'M+' };
+  const t = Math.floor(score / 400);
+  const d = Math.floor((score % 400) / 100);
+  const tier = TIERS[t];
+  const division = DIVISIONS[d];
+  return { tier, division, label: `${TIER_KO[tier]} ${division}`, badge: `${TIER_SHORT[tier]}${DIVISION_NUMBER[division]}` };
+}
+
+/** 'D1', 'M', 'U'(언랭크), '-'(비공개·봇), '?'(조회 실패·미조회) */
+function tierBadge(rank) {
+  if (rank?.status === 'unranked') return 'U';
+  if (rank?.status === 'hidden' || rank?.status === 'bot') return '-';
+  if (rank?.status !== 'ranked') return '?';
+  if (APEX_TIERS.includes(rank.tier)) return TIER_SHORT[rank.tier];
+  return `${TIER_SHORT[rank.tier] || '?'}${DIVISION_NUMBER[rank.division] || ''}`;
+}
+
+function tierName(rank) {
+  if (rank?.status !== 'ranked') return null;
+  const tier = TIER_KO[rank.tier] || rank.tier;
+  return APEX_TIERS.includes(rank.tier) ? tier : `${tier} ${rank.division}`;
+}
+
+/** 랭크가 있는 참가자만으로 평균 티어. 없으면 null */
+function averageTier(players) {
+  const scores = players.map((p) => tierScore(p.rank)).filter((s) => s !== null);
+  if (scores.length === 0) return null;
+  const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  return { ...tierFromScore(avg), counted: scores.length, total: players.length };
 }
 
 /**
- * 사실(fact)과 그 사실에 근거한 주의할 점(최대 3)·운영 선택지(최대 2)를 만든다.
- * 모든 문장은 입력 데이터나 검수된 자료에서 온다. 자료가 없으면 만들지 않는다.
+ * 팀에 첩자가 1명 이상 있을 확률 (재미용).
+ * 각자의 최근 경기 첩자 판정률을 독립이라고 보고 1 − Π(1 − p). excludeSlot(조회 대상 본인)은 뺀다.
+ * 판정률이 있는 사람이 spyTeamMinPlayers 미만이면 null.
  */
-function buildBriefContent(perspective, knowledge, game) {
-  const facts = [];
-  const addFact = (subject, text) => {
-    const id = `F${facts.length + 1}`;
-    facts.push({ id, subject, text });
-    return id;
+function teamSpyEstimate(players, excludeSlot = null) {
+  const rates = players
+    .filter((p) => p.slot !== excludeSlot)
+    .map((p) => p.stats?.spy?.ratePermil)
+    .filter((r) => r !== null && r !== undefined);
+  const considered = players.filter((p) => p.slot !== excludeSlot).length;
+  if (rates.length < BRIEFING_CONFIG.spyTeamMinPlayers) return { permil: null, counted: rates.length, considered };
+  const none = rates.reduce((acc, r) => acc * (1 - r / 1000), 1);
+  const expected = rates.reduce((acc, r) => acc + r / 1000, 0);
+  return {
+    permil: Math.round((1 - none) * 1000),
+    expectedTenths: Math.round(expected * 10),
+    counted: rates.length,
+    considered,
   };
-  const cautions = [];
-  const options = [];
-
-  if (perspective.mode !== 'personal') {
-    return { facts, cautions, options, compAlly: null, compEnemy: null, matchups: [] };
-  }
-
-  const { target, lane, allies, enemies } = perspective;
-  const compAlly = summarizeTeamComposition(allies, knowledge);
-  const compEnemy = summarizeTeamComposition(enemies, knowledge);
-  const myProfile = knowledge.profileFor(target.championId);
-
-  // 1) 검수된 상대법
-  const matchups = [];
-  if (lane.type !== 'none' && myProfile) {
-    const opponentIds = (lane.opponents || [])
-      .map((p) => knowledge.profileFor(p.championId)?.id)
-      .filter(Boolean);
-    const allyIds = lane.type === 'bottom'
-      ? (lane.allyDuo || []).map((p) => knowledge.profileFor(p.championId)?.id).filter(Boolean)
-      : [myProfile.id];
-    matchups.push(
-      ...knowledge.findMatchups({ laneType: lane.type, role: perspective.myRole.role, allyIds, opponentIds, queueId: game.queueId })
-    );
-  }
-  for (const m of matchups) {
-    for (const text of m.cautions) {
-      const f = addFact('MATCHUP', `검수된 상대법(${m.id}): ${text}`);
-      cautions.push({ source: 'verified-matchup', text, factIds: [f], matchupId: m.id });
-    }
-    for (const text of m.options) {
-      const f = addFact('MATCHUP', `검수된 상대법(${m.id}) 운영: ${text}`);
-      options.push({ source: 'verified-matchup', text, factIds: [f], matchupId: m.id });
-    }
-  }
-
-  // 2) 상대법 자료가 없으면 상대 챔피언의 공식 일반 팁 (특정 매치업의 정답이 아님)
-  if (matchups.length === 0 && lane.type !== 'none') {
-    for (const opponent of lane.opponents || []) {
-      const tip = firstOrNull(knowledge.profileFor(opponent.championId)?.enemytips);
-      if (!tip) continue;
-      const f = addFact('ENEMY_LANE', `${opponent.championName} 공식 일반 팁(Data Dragon enemytips): ${tip}`);
-      cautions.push({ source: 'official-tip', text: `${opponent.championName} 공식 일반 팁: ${tip}`, factIds: [f] });
-      break;
-    }
-  }
-
-  // 3) 적 조합 — 하드 CC (스킬 설명 키워드 기준)
-  if (compEnemy.hardCc.length >= 3) {
-    const names = compEnemy.hardCc.map((h) => h.championName).join(', ');
-    const f = addFact('ENEMY_TEAM', `적 팀 중 스킬 설명에 하드 CC 표현이 있는 챔피언 ${compEnemy.hardCc.length}명: ${names}`);
-    cautions.push({
-      source: 'composition',
-      text: `적 팀에 하드 CC 스킬 보유 챔피언이 ${compEnemy.hardCc.length}명(${names})입니다. 교전 전에 진입 각과 시야를 확인하세요.`,
-      factIds: [f],
-    });
-  }
-
-  // 4) 상대 후보의 현재 챔피언 표본 (사실만, 실력 판정 없음)
-  for (const opponent of lane.opponents || []) {
-    const s = opponent.stats;
-    if (!s || s.champion.games < BRIEFING_CONFIG.frequentChampionGames) continue;
-    const f = addFact(
-      'ENEMY_LANE',
-      `${opponent.championName}(${roleLabelFor(perspective, opponent)} 후보): 최근 수집 ${s.collected}경기 중 해당 챔피언 ${s.champion.games}경기(${s.champion.wins}승 ${s.champion.losses}패)`
-    );
-    cautions.push({
-      source: 'record',
-      text: `상대 ${opponent.championName}: 최근 수집 ${s.collected}경기 중 해당 챔피언 ${s.champion.games}경기로 이 챔피언 표본이 많습니다.`,
-      factIds: [f],
-    });
-    break;
-  }
-
-  // 5) 적 조합 — 피해 성향 (공식 성향 수치 기준, 실제 피해 비율 아님)
-  if (compEnemy.conclusive) {
-    for (const [lean, label] of [['physical', '물리'], ['magic', '마법']]) {
-      if (compEnemy.damage[lean] >= 4) {
-        const f = addFact('ENEMY_TEAM', `적 팀 ${compEnemy.known}명 중 ${label} 피해 성향 ${compEnemy.damage[lean]}명 (Data Dragon info 수치 기준)`);
-        cautions.push({
-          source: 'composition',
-          text: `적 팀은 ${label} 피해 성향 챔피언이 ${compEnemy.damage[lean]}명입니다(공식 성향 수치 기준, 실제 피해 비율 아님). 방어 아이템 선택 시 참고하세요.`,
-          factIds: [f],
-        });
-      }
-    }
-  }
-
-  // 운영 선택지: 내 챔피언 공식 팁 → 우리 조합 하드 CC
-  for (const tip of (myProfile?.allytips || []).slice(0, 2)) {
-    const f = addFact('ME', `${target.championName} 공식 챔피언 팁(Data Dragon allytips): ${tip}`);
-    options.push({ source: 'official-tip', text: `${target.championName} 공식 팁: ${tip}`, factIds: [f] });
-  }
-  if (compAlly.hardCc.length >= 3) {
-    const names = compAlly.hardCc.map((h) => h.championName).join(', ');
-    const f = addFact('ALLY_TEAM', `우리 팀 중 스킬 설명에 하드 CC 표현이 있는 챔피언 ${compAlly.hardCc.length}명: ${names}`);
-    options.push({
-      source: 'composition',
-      text: `우리 팀도 하드 CC 스킬 보유 챔피언이 ${compAlly.hardCc.length}명(${names})이라, 스킬을 연계해 교전을 여는 운영을 선택지로 둘 수 있습니다.`,
-      factIds: [f],
-    });
-  }
-
-  const ordered = (list, order) =>
-    list
-      .map((item, i) => ({ item, i }))
-      .sort((a, b) => order.indexOf(a.item.source) - order.indexOf(b.item.source) || a.i - b.i)
-      .map(({ item }) => item);
-
-  const pickedCautions = ordered(cautions, ['verified-matchup', 'official-tip', 'composition', 'record']).slice(0, 3);
-  const pickedOptions = ordered(options, ['verified-matchup', 'official-tip', 'composition']).slice(0, 2);
-  pickedCautions.forEach((c, i) => { c.id = `C${i + 1}`; });
-  pickedOptions.forEach((o, i) => { o.id = `O${i + 1}`; });
-
-  return { facts, cautions: pickedCautions, options: pickedOptions, compAlly, compEnemy, matchups };
 }
 
 // ============================================
@@ -635,6 +629,10 @@ function buildBriefContent(perspective, knowledge, game) {
 // ============================================
 function formatPermil(permil) {
   return `${Math.floor(permil / 10)}.${permil % 10}`;
+}
+
+function formatPercentPermil(permil) {
+  return `${Math.round(permil / 10)}`;
 }
 
 function formatTenths(tenths) {
@@ -663,6 +661,7 @@ module.exports = {
   SMITE_SPELL_ID,
   MatchDataError,
   queueName,
+  mapName,
   rankQueueTypeFor,
   isHistoryQueue,
   isRoleAnalysisSupported,
@@ -670,13 +669,19 @@ module.exports = {
   evaluateMatchFor,
   combinedKda,
   computeStreak,
+  mainRoleOf,
   aggregateHistory,
   roleScoresFor,
   assignTeamRoles,
   buildPerspective,
-  summarizeTeamComposition,
-  buildBriefContent,
+  playerTags,
+  tierScore,
+  tierBadge,
+  tierName,
+  averageTier,
+  teamSpyEstimate,
   formatPermil,
+  formatPercentPermil,
   formatTenths,
   formatKda,
   formatStreak,

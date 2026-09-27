@@ -177,10 +177,10 @@ async function getLeagueEntriesByPuuid(puuid, options = {}) {
 }
 
 /**
- * 특정 챔피언 숙련도. 404(데이터 없음)는 null.
+ * 숙련도 상위 챔피언 (주 챔피언 표시용). 404는 null.
  */
-async function getChampionMastery(puuid, championId, options = {}) {
-  const url = `${PLATFORM_URL}/lol/champion-mastery/v4/champion-masteries/by-puuid/${encodeURIComponent(puuid)}/by-champion/${encodeURIComponent(championId)}`;
+async function getTopChampionMasteries(puuid, count = 3, options = {}) {
+  const url = `${PLATFORM_URL}/lol/champion-mastery/v4/champion-masteries/by-puuid/${encodeURIComponent(puuid)}/top?count=${encodeURIComponent(count)}`;
   return await riotApiRequest(url, undefined, { signal: options.signal });
 }
 
@@ -311,6 +311,11 @@ function getChampionName(championId) {
 /** Data Dragon 챔피언 ID (예: 'Ahri'). 정적 데이터가 없으면 null */
 function getChampionDataId(championId) {
   return championsData?.[String(championId)]?.id || null;
+}
+
+/** Data Dragon 스펠 ID (예: 'SummonerFlash'). 없으면 null */
+function getSpellDataId(spellId) {
+  return spellsData?.[String(spellId)]?.id || null;
 }
 
 function getStaticDataInfo() {
@@ -500,7 +505,7 @@ module.exports = {
   getSummonerByPuuid,
   getRankByPuuid,
   getLeagueEntriesByPuuid,
-  getChampionMastery,
+  getTopChampionMasteries,
   getRecentMatchIds,
   getMatchDetail,
   getMatchTimeline,
@@ -510,6 +515,7 @@ module.exports = {
   getChampionImage,
   getStaticDataInfo,
   getSpellName,
+  getSpellDataId,
   formatRank,
   fetchLiveGameData,
   fetchRecentMatchData,

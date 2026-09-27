@@ -7,7 +7,6 @@ const {
   evaluateMatchFor,
   aggregateHistory,
   buildPerspective,
-  buildBriefContent,
   isHistoryQueue,
   rankQueueTypeFor,
   MatchDataError,
@@ -333,19 +332,27 @@ async function loadMatch(ctx, signal, matchId) {
   return promise;
 }
 
-async function loadMastery(ctx, signal, puuid, championId) {
-  const key = `${LIVE_CONFIG.platformId}:${puuid}:${championId}`;
+/** 숙련도 상위 3챔피언 (주 챔피언). 404는 기록 없음 */
+async function loadTopMasteries(ctx, signal, puuid) {
+  const key = `${LIVE_CONFIG.platformId}:${puuid}:top3`;
   const cached = masteryCache.get(key);
   if (cached) return cached;
   try {
     const data = await callRiot(ctx, signal, inflight.mastery, key, (s) =>
-      riotService.getChampionMastery(puuid, championId, { signal: s })
+      riotService.getTopChampionMasteries(puuid, 3, { signal: s })
     );
-    const result = data === null
-      ? { status: 'none' }
-      : Number.isFinite(data?.championPoints)
-        ? { status: 'ok', level: data.championLevel, points: data.championPoints }
-        : { status: 'error', reason: 'invalid' };
+    let result;
+    if (data === null) result = { status: 'none', champions: [] };
+    else if (!Array.isArray(data)) result = { status: 'error', reason: 'invalid' };
+    else {
+      result = {
+        status: 'ok',
+        champions: data
+          .filter((m) => Number.isFinite(m?.championId) && Number.isFinite(m?.championPoints))
+          .slice(0, 3)
+          .map((m) => ({ championId: m.championId, points: m.championPoints, level: m.championLevel })),
+      };
+    }
     if (result.status !== 'error') masteryCache.set(key, result);
     return result;
   } catch (err) {
@@ -426,7 +433,10 @@ function buildBaseParticipants(live) {
       teamId: p?.teamId,
       championId: p?.championId,
       championName: riotService.getChampionName(p?.championId),
+      spellIds: spells,
       spellNames: spells.map((id) => riotService.getSpellName(id)),
+      spellDataIds: spells.map((id) => riotService.getSpellDataId(id)),
+      championDataId: riotService.getChampionDataId(p?.championId),
       hasSmite: spells.includes(SMITE_SPELL_ID),
       runes: perkIds
         ? { keystoneId: perkIds[0] ?? null, primaryStyleId: p.perks.perkStyle ?? null, subStyleId: p.perks.perkSubStyle ?? null }
@@ -450,22 +460,22 @@ function snapshotParticipants(base, collection, game) {
     const history = historyOf(p, state, game.queueId);
     const stats = history.status === 'ok' ? aggregateHistory(history, p.championId) : null;
     const rank = !isLookupTarget(p) ? { status: p.bot ? 'bot' : 'hidden' } : state?.rank || { status: 'skipped' };
-    const mastery = !isLookupTarget(p) ? null : state?.mastery?.championId === p.championId ? state.mastery.result : null;
-    return { ...p, rank, history: { status: history.status, reason: history.reason }, stats, mastery };
+    const topMasteries = !isLookupTarget(p) ? null : state?.mastery || { status: 'skipped' };
+    return { ...p, rank, history: { status: history.status, reason: history.reason }, stats, topMasteries };
   });
 }
 
 async function loadProfiles(base, version) {
   const profiles = new Map();
   const unique = [...new Set(base.map((p) => p.championId))];
-  const [runeNames] = await Promise.all([
-    championKnowledge.getRuneNames(version),
+  const [runes] = await Promise.all([
+    championKnowledge.getRunes(version),
     ...unique.map(async (championId) => {
       const dataId = riotService.getChampionDataId(championId);
       profiles.set(championId, dataId ? await championKnowledge.getChampionProfile(version, dataId) : null);
     }),
   ]);
-  return { profiles, runeNames };
+  return { profiles, runes };
 }
 
 // ============================================
@@ -478,13 +488,19 @@ async function collect(ctx, collection, game, base, targetPuuid, settings) {
   const evalOptions = { queueId: game.queueId, cutoffMs: now() - settings.lookbackDays * 24 * 60 * 60 * 1000 };
   const byTargetFirst = [...lookups].sort((a, b) => (b.puuid === targetPuuid) - (a.puuid === targetPuuid));
 
-  // 1차: 랭크 · 경기 ID · 참가자별 빠른 표본
+  // 1차: 랭크 · 주 챔피언(숙련도 상위) · 경기 ID · 참가자별 빠른 표본
   const quick = phaseSignal(ctx.signal, Math.min(LIVE_CONFIG.quickPhaseMs, ctx.deadlineAt - Date.now() - ctx.reserveMs));
   try {
     await runPool(
       byTargetFirst.flatMap((p) => {
         const state = playerState(collection, p.puuid);
-        const tasks = [async () => { state.rank = await loadRank(ctx, quick.signal, p.puuid, queueType); }];
+        const tasks = [
+          async () => { state.rank = await loadRank(ctx, quick.signal, p.puuid, queueType); },
+          async () => {
+            const result = await loadTopMasteries(ctx, quick.signal, p.puuid);
+            if (result.status !== 'skipped' || !state.mastery) state.mastery = result;
+          },
+        ];
         if (historyEnabled && state.ids?.status !== 'ok') {
           tasks.push(async () => {
             const ids = await loadMatchIds(ctx, quick.signal, p.puuid, game.queueId, settings);
@@ -524,15 +540,6 @@ async function collect(ctx, collection, game, base, targetPuuid, settings) {
         rest.signal
       );
     }
-    // 숙련도: 조회 대상과 상대 후보만 (보조 정보)
-    await runPool(
-      lookups.filter((p) => priorityIds.has(p.puuid)).map((p) => async () => {
-        const state = playerState(collection, p.puuid);
-        state.mastery = { championId: p.championId, result: await loadMastery(ctx, rest.signal, p.puuid, p.championId) };
-      }),
-      LIVE_CONFIG.concurrency,
-      rest.signal
-    );
     if (historyEnabled) {
       const others = lookups.filter((p) => !priorityIds.has(p.puuid));
       await runPool(
@@ -593,6 +600,9 @@ async function createLiveBriefing(input, { onBasic = null, deadlineMs = LIVE_CON
       mapId: live.mapId,
       gameMode: live.gameMode || null,
       gameStartTime: Number.isFinite(live.gameStartTime) && live.gameStartTime > 0 ? live.gameStartTime : null,
+      bans: (Array.isArray(live.bannedChampions) ? live.bannedChampions : [])
+        .filter((b) => Number.isFinite(b?.championId) && b.championId > 0)
+        .map((b) => ({ championId: b.championId, teamId: b.teamId, pickTurn: b.pickTurn })),
     };
     const base = buildBaseParticipants(live);
     const staticData = riotService.getStaticDataInfo();
@@ -620,12 +630,12 @@ async function createLiveBriefing(input, { onBasic = null, deadlineMs = LIVE_CON
 
     const collection = getCollection(game);
     await collect(ctx, collection, game, base, puuid, settings);
-    const { profiles, runeNames } = await profilesPromise;
+    const { profiles, runes } = await profilesPromise;
 
     return makeModel(collection, {
       stage: 'final',
       profiles,
-      runeNames,
+      runes,
       collectionStats: {
         riotCalls: ctx.riotCalls,
         newDetails: ctx.newDetails,
@@ -636,16 +646,6 @@ async function createLiveBriefing(input, { onBasic = null, deadlineMs = LIVE_CON
   } finally {
     ctx.dispose();
   }
-}
-
-/**
- * 모델 + 관점(역할 지정) → 화면에 필요한 계산 결과. 외부 호출 없음.
- */
-function buildBriefing(model, { roleOverride = null } = {}) {
-  const perspective = buildPerspective(model, { roleOverride });
-  const knowledge = championKnowledge.createKnowledge(model.profiles || new Map(), model.staticData?.version || null);
-  const content = buildBriefContent(perspective, knowledge, model.game);
-  return { perspective, content, knowledge, completeness: summarizeCompleteness(model, perspective) };
 }
 
 function summarizeCompleteness(model, perspective) {
@@ -694,7 +694,6 @@ module.exports = {
   describeErrorForLog,
   sharedFetch,
   createLiveBriefing,
-  buildBriefing,
   summarizeCompleteness,
   tryAcquireCooldown,
   __testing: {

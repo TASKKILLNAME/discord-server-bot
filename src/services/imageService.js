@@ -95,6 +95,27 @@ async function generateReportImage(analysisText, matchInfo) {
   }
 }
 
+/**
+ * 완성된 HTML을 PNG Buffer로. 외부 이미지 로딩이 timeoutMs 안에 끝나지 않으면 그 상태로 찍는다.
+ */
+async function renderHtmlToPng(html, { width = 1080, maxHeight = 2400, timeoutMs = 10000 } = {}) {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  try {
+    await page.setViewport({ width, height: 600 });
+    try {
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: timeoutMs });
+    } catch (err) {
+      if (err?.name !== 'TimeoutError') throw err;
+    }
+    const height = await page.evaluate(() => document.body.scrollHeight);
+    await page.setViewport({ width, height: Math.min(Math.max(height, 1), maxHeight) });
+    return await page.screenshot({ type: 'png', fullPage: false });
+  } finally {
+    await page.close();
+  }
+}
+
 async function closeBrowser() {
   browserClosing = true;
 
@@ -130,4 +151,4 @@ function formatAnalysisHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-module.exports = { generateReportImage, closeBrowser };
+module.exports = { generateReportImage, renderHtmlToPng, closeBrowser };

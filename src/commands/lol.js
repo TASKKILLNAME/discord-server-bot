@@ -12,14 +12,9 @@ const {
   tryAcquireCooldown: tryAcquireBriefingCooldown,
   describeErrorForLog: describeBriefingError,
 } = require('../services/liveBriefingService');
-const { renderBriefing, renderLoading, renderError } = require('../services/liveBriefingLayout');
-const {
-  createSession,
-  getSession,
-  parseComponentId,
-  checkAccess,
-} = require('../services/liveBriefingSessions');
-const { explainBriefContent } = require('../services/liveBriefingExplainer');
+const { buildLiveGameView } = require('../services/liveGameView');
+const { renderLiveGameCard } = require('../services/liveGameCard');
+const { renderLiveGameMessage, renderLoading, renderError } = require('../services/liveGameLayout');
 const {
   analyzeRecentMatches,
   parseAnalysisToFields,
@@ -308,8 +303,7 @@ module.exports = {
   // ============================================
   // 🎮 실시간 게임 조회 (수동)
   // ============================================
-  // 조회 시점의 진행 중 경기 + 과거 전적으로 만든 게임 시작 브리핑.
-  // 사실 기반 화면을 먼저 보여주고, AI 설명은 검증을 통과했을 때만 덧입힌다.
+  // 조회 시점의 진행 중 경기 + 참가자별 랭크·주챔·최근 전적·첩자 판정률을 라인별로 맞대 보여준다.
   async liveGame(interaction) {
     const gameName = interaction.options.getString('소환사명');
     const tagLine = interaction.options.getString('태그');
@@ -335,7 +329,7 @@ module.exports = {
       const model = await createLiveBriefing(
         { gameName, tagLine },
         {
-          onBasic: (basic) => interaction.editReply(renderLoading(basic)),
+          onBasic: (basic) => interaction.editReply(renderLoading(buildLiveGameView(basic))),
         }
       );
 
@@ -369,23 +363,15 @@ module.exports = {
         return interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
       }
 
-      const session = createSession({
-        ownerId: interaction.user.id,
-        guildId: interaction.guildId,
-        channelId: interaction.channelId,
-        model,
-      });
-      session.explanation = { status: 'pending' };
-      const { briefing, ...payload } = renderBriefing(model, { sessionId: session.id, explanation: session.explanation });
-      const message = await interaction.editReply(payload);
-      session.messageId = message?.id || null;
-
-      // AI 설명은 기다리는 동안에도 사실 기반 화면이 이미 보인다. 실패하면 템플릿 문장 그대로 둔다.
-      session.explanation = await explainBriefContent(briefing.content);
-      if (session.view === 'home' && !session.roleOverride) {
-        const { briefing: _, ...updated } = renderBriefing(model, { sessionId: session.id, explanation: session.explanation });
-        await interaction.editReply(updated).catch((err) => console.error(`브리핑 설명 반영 실패: ${err.message}`));
+      const view = buildLiveGameView(model);
+      // 카드 이미지는 실패하거나 늦으면 텍스트만 보낸다
+      let image = null;
+      try {
+        image = await renderLiveGameCard(view);
+      } catch (err) {
+        console.error(`실시간 카드 이미지 생성 실패: ${err.message}`);
       }
+      await interaction.editReply(renderLiveGameMessage(view, { image }));
     } catch (err) {
       console.error(`실시간 조회 오류: ${describeBriefingError(err)}`);
       const message = err instanceof BriefingError
@@ -395,46 +381,6 @@ module.exports = {
         .editReply(renderError(message))
         .catch((editErr) => console.error(`실시간 조회 응답 실패: ${editErr.message}`));
     }
-  },
-
-  // ============================================
-  // 🔘 브리핑 버튼·선택 메뉴 (Riot·AI 재호출 없음)
-  // ============================================
-  async handleBriefingComponent(interaction) {
-    const parsed = parseComponentId(interaction.customId);
-    if (!parsed) {
-      return interaction.reply({ content: '❌ 알 수 없는 요청입니다.', ephemeral: true });
-    }
-
-    const session = getSession(parsed.sessionId);
-    if (!session) {
-      // 만료된 세션: 버튼을 치우고 조작한 사람에게만 알린다
-      await interaction.update({ components: [] }).catch(() => {});
-      const notice = { content: '⌛ 브리핑 세션이 만료되었습니다. `/전적 실시간`으로 다시 조회해주세요.', ephemeral: true };
-      return interaction.replied || interaction.deferred ? interaction.followUp(notice) : interaction.reply(notice);
-    }
-
-    const denied = checkAccess(session, {
-      userId: interaction.user.id,
-      guildId: interaction.guildId,
-      messageId: interaction.message?.id,
-    });
-    if (denied) return interaction.reply({ content: `❌ ${denied}`, ephemeral: true });
-
-    if (parsed.action === 'view') {
-      session.view = parsed.view;
-    } else {
-      const value = interaction.values?.[0];
-      session.roleOverride = value && value !== 'AUTO' ? value : null;
-    }
-
-    const { briefing, ...payload } = renderBriefing(session.model, {
-      view: session.view,
-      roleOverride: session.roleOverride,
-      explanation: session.explanation,
-      sessionId: session.id,
-    });
-    return interaction.update(payload);
   },
 
   // ============================================
