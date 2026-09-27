@@ -7,24 +7,39 @@ const fs = require('fs');
 const path = require('path');
 
 let browserInstance = null;
+let browserLaunchPromise = null;
+let browserClosing = false;
 
 async function getBrowser() {
+  if (browserClosing) {
+    throw new Error('이미지 브라우저가 종료 중입니다.');
+  }
   if (browserInstance && browserInstance.connected) {
     return browserInstance;
   }
 
-  browserInstance = await puppeteer.launch({
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-    ],
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-  });
+  if (!browserLaunchPromise) {
+    browserLaunchPromise = puppeteer.launch({
+      headless: 'new',
+      handleSIGINT: false,
+      handleSIGTERM: false,
+      handleSIGHUP: false,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ],
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    }).then((browser) => {
+      browserInstance = browser;
+      return browser;
+    }).finally(() => {
+      browserLaunchPromise = null;
+    });
+  }
 
-  return browserInstance;
+  return browserLaunchPromise;
 }
 
 async function generateReportImage(analysisText, matchInfo) {
@@ -59,7 +74,8 @@ async function generateReportImage(analysisText, matchInfo) {
 
   try {
     await page.setViewport({ width: 1080, height: 1080 });
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    // This self-contained template has no network resources to wait for.
+    await page.setContent(html, { waitUntil: 'load' });
 
     // 콘텐츠 높이에 맞게 조정
     const bodyHeight = await page.evaluate(() => document.body.scrollHeight);
@@ -79,6 +95,26 @@ async function generateReportImage(analysisText, matchInfo) {
   }
 }
 
+async function closeBrowser() {
+  browserClosing = true;
+
+  let browser = browserInstance;
+  if (!browser && browserLaunchPromise) {
+    try {
+      browser = await browserLaunchPromise;
+    } catch {
+      return;
+    }
+  }
+  if (!browser) return;
+
+  try {
+    await browser.close();
+  } finally {
+    browserInstance = null;
+  }
+}
+
 function escapeHtml(text) {
   return String(text)
     .replace(/&/g, '&amp;')
@@ -94,4 +130,4 @@ function formatAnalysisHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-module.exports = { generateReportImage };
+module.exports = { generateReportImage, closeBrowser };

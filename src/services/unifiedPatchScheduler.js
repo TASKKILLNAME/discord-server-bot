@@ -1,8 +1,10 @@
+const { patchPayloads } = require('./patchLayout');
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const { pool } = require('../db');
+const { deliverPatch, canonicalUrl } = require('./patchDelivery');
 
 const lolCrawler = require('./patchCrawler');
 const valorantCrawler = require('./valorantCrawler');
@@ -140,18 +142,9 @@ function makeGameApi(gameKey) {
       const summary = await config.summarize(patchData);
       const embedData = config.format(summary, patchData);
 
-      const patchEmbed = new EmbedBuilder()
-        .setTitle(embedData.title)
-        .setURL(embedData.url)
-        .setColor(embedData.color)
-        .setTimestamp()
-        .setFooter(embedData.footer);
-
-      if (embedData.thumbnail) patchEmbed.setThumbnail(embedData.thumbnail.url);
-      for (const field of embedData.fields.slice(0, 25)) patchEmbed.addFields(field);
-
-      await channel.send({ embeds: [patchEmbed] });
-      await channel.send(`📎 **원문 보기:** ${patchData.url}`);
+      for (const payload of patchPayloads(embedData, patchData)) {
+        await channel.send(payload);
+      }
     },
   };
 }
@@ -166,29 +159,6 @@ const GAME_APIS = { lol, valorant, tft };
 // ============================================
 // 스케줄러 내부 함수
 // ============================================
-async function syncCurrentPatch(gameKey) {
-  const config = GAME_CONFIGS[gameKey];
-  try {
-    const latest = await config.crawler.getLatestPatchUrl();
-    if (!latest.url) {
-      console.log(`⚠️ ${config.name} 패치노트 URL을 가져올 수 없어 동기화 스킵`);
-      return;
-    }
-    const lastPatch = await config.crawler.loadLastPatch();
-    if (lastPatch.lastUrl === latest.url) {
-      console.log(`📋 ${config.name} 패치 기록 최신 상태: ${lastPatch.lastTitle || latest.url}`);
-      return;
-    }
-    await config.crawler.saveLastPatch({
-      lastUrl: latest.url,
-      lastTitle: latest.title || config.defaultTitle,
-    });
-    console.log(`📋 ${config.name} 현재 패치 기록 완료: ${latest.title || latest.url} (알림 없음)`);
-  } catch (err) {
-    console.error(`${config.name} 패치 동기화 실패:`, err.message);
-  }
-}
-
 async function sendPatchEmbeds(channel, embedData, patchData, config, summaryFailed) {
   const alertEmbed = new EmbedBuilder()
     .setTitle(config.alertTitle)
@@ -202,33 +172,9 @@ async function sendPatchEmbeds(channel, embedData, patchData, config, summaryFai
 
   await channel.send({ embeds: [alertEmbed] });
 
-  const patchEmbed = new EmbedBuilder()
-    .setTitle(embedData.title)
-    .setURL(embedData.url)
-    .setColor(embedData.color)
-    .setTimestamp()
-    .setFooter(embedData.footer);
-
-  if (embedData.thumbnail) patchEmbed.setThumbnail(embedData.thumbnail.url);
-
-  const maxFieldsPerEmbed = 25;
-  const fieldChunks = [];
-  for (let i = 0; i < embedData.fields.length; i += maxFieldsPerEmbed) {
-    fieldChunks.push(embedData.fields.slice(i, i + maxFieldsPerEmbed));
+  for (const payload of patchPayloads(embedData, patchData)) {
+    await channel.send(payload);
   }
-
-  if (fieldChunks.length > 0) {
-    for (const field of fieldChunks[0]) patchEmbed.addFields(field);
-    await channel.send({ embeds: [patchEmbed] });
-  }
-
-  for (let i = 1; i < fieldChunks.length; i++) {
-    const extraEmbed = new EmbedBuilder().setColor(embedData.color);
-    for (const field of fieldChunks[i]) extraEmbed.addFields(field);
-    await channel.send({ embeds: [extraEmbed] });
-  }
-
-  await channel.send(`📎 **원문 보기:** ${patchData.url}`);
 }
 
 async function checkAndNotifyGame(client, gameKey) {
@@ -236,8 +182,14 @@ async function checkAndNotifyGame(client, gameKey) {
   const gameApi = GAME_APIS[gameKey];
 
   try {
-    const patchData = await config.crawler.checkForNewPatch();
-    if (!patchData) return;
+    const channels = await gameApi.getAllPatchChannels();
+    if (!channels.length) return;
+    const latest = await config.crawler.getLatestPatchUrl();
+    if (!latest.url) throw new Error('최신 패치 URL 조회 실패');
+    let prepared;
+    const buildPayloads = () => prepared ||= (async () => {
+    const patchData = await config.crawler.crawlPatchContent(latest.url);
+    if (!patchData) throw new Error('패치 본문 조회 실패');
 
     console.log(`📰 ${config.name} 새 패치노트 감지: ${patchData.title}`);
     console.log(`🤖 ${config.name} AI 요약 생성 중...`);
@@ -271,7 +223,12 @@ async function checkAndNotifyGame(client, gameKey) {
       }
     }
 
-    const channels = await gameApi.getAllPatchChannels();
+    const payloads = [];
+    await sendPatchEmbeds({ send: async payload => {
+      payloads.push(typeof payload === 'string' ? { content: payload } : JSON.parse(JSON.stringify(payload)));
+    } }, embedData, patchData, config, summaryFailed);
+    return payloads;
+    })();
     let successCount = 0;
     let failCount = 0;
 
@@ -282,15 +239,22 @@ async function checkAndNotifyGame(client, gameKey) {
           failCount++;
           continue;
         }
-        await sendPatchEmbeds(channel, embedData, patchData, config, summaryFailed);
-        successCount++;
+        if (await deliverPatch(gameKey, channel, latest.url, buildPayloads)) successCount++;
+        else failCount++;
       } catch (err) {
         console.error(`❌ ${config.name} 패치 알림 실패 (서버: ${guildId}):`, err.message);
         failCount++;
       }
     }
 
-    console.log(`✅ ${config.name} 패치노트 알림 전송 완료! (성공: ${successCount}, 실패: ${failCount})`);
+    if (successCount === channels.length) {
+      await pool.query(
+        `INSERT INTO patch_state (game,last_url,last_title,checked_at) VALUES ($1,$2,$3,NOW())
+         ON CONFLICT (game) DO UPDATE SET last_url=$2,last_title=$3,checked_at=NOW()`,
+        [gameKey, canonicalUrl(latest.url), latest.title || config.defaultTitle]
+      );
+    }
+    console.log(`✅ ${config.name} 패치 배달 확인 완료 (완료: ${successCount}, 재시도 대기: ${failCount})`);
   } catch (err) {
     console.error(`❌ ${config.name} 패치노트 체크 실패:`, err.message);
   }
@@ -318,14 +282,6 @@ async function startUnifiedPatchScheduler(client) {
     console.log(`   롤: ${lolCount}개 | 발로란트: ${valorantCount}개 | TFT: ${tftCount}개 서버`);
   }
 
-  // 시작 전 전체 동기화 (알림 없음, 재시작 시 중복 알림 방지)
-  console.log('🔍 초기 패치노트 동기화 (알림 없음)...');
-  await Promise.all([
-    syncCurrentPatch('lol'),
-    syncCurrentPatch('valorant'),
-    syncCurrentPatch('tft'),
-  ]);
-
   // 단일 cron으로 3개 게임 동시 체크
   scheduledTask = cron.schedule('*/30 * * * *', async () => {
     console.log(`\n⏰ [${new Date().toLocaleString('ko-KR')}] 패치노트 체크 중 (롤/발로란트/TFT)...`);
@@ -335,6 +291,12 @@ async function startUnifiedPatchScheduler(client) {
       checkAndNotifyGame(client, 'tft'),
     ]);
   });
+  console.log('🔍 시작 시 미전송 패치 확인 (채널별 전송 기록 기준)...');
+  await Promise.all([
+    checkAndNotifyGame(client, 'lol'),
+    checkAndNotifyGame(client, 'valorant'),
+    checkAndNotifyGame(client, 'tft'),
+  ]);
 }
 
 function stopUnifiedPatchScheduler() {

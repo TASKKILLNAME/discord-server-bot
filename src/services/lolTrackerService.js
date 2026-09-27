@@ -11,7 +11,6 @@ const {
   fetchLiveGameData,
 } = require('./riotService');
 const { analyzeLiveGame, parseAnalysisToFields } = require('./lolAnalyzer');
-const { hasCredit, useCredit, getCredits } = require('./membershipService');
 
 // 티어 순서 (낮은 → 높은)
 const TIER_ORDER = [
@@ -316,28 +315,10 @@ async function checkAllPlayers(client) {
 // ============================================
 async function sendGameNotification(client, channel, player, discordUserId) {
   try {
-    const guildId = channel.guild.id;
-
-    if (!(await hasCredit(guildId, discordUserId))) {
-      const remaining = await getCredits(guildId, discordUserId);
-      const noCreditsEmbed = new EmbedBuilder()
-        .setTitle('🎮 게임 감지!')
-        .setDescription(
-          `<@${discordUserId}> (**${player.gameName}#${player.tagLine}**)님이 게임을 시작했습니다!\n\n` +
-            `⚠️ AI 분석 크레딧이 부족합니다. (잔여: ${remaining}회)\n` +
-            '`/멤버십 구매`로 크레딧을 충전해주세요.'
-        )
-        .setColor(0x808080)
-        .setTimestamp();
-      await channel.send({ embeds: [noCreditsEmbed] });
-      return;
-    }
-
-    const credits = await getCredits(guildId, discordUserId);
     const loadingEmbed = new EmbedBuilder()
       .setTitle('🎮 게임 감지!')
       .setDescription(
-        `<@${discordUserId}> (**${player.gameName}#${player.tagLine}**)님이 게임을 시작했습니다!\nAI가 분석 중입니다... (💳 잔여: ${credits}회)`
+        `<@${discordUserId}> (**${player.gameName}#${player.tagLine}**)님이 게임을 시작했습니다!\nAI가 분석 중입니다...`
       )
       .setColor(0xffa500)
       .setTimestamp();
@@ -360,8 +341,6 @@ async function sendGameNotification(client, channel, player, discordUserId) {
 
     const analysis = await analyzeLiveGame(gameData);
     const analysisFields = parseAnalysisToFields(analysis);
-
-    await useCredit(guildId, discordUserId, '자동 게임 감지');
 
     const blueDesc = gameData.blueTeam
       .map((p) => `**${p.championName}** | ${p.rank}\n${p.spell1} / ${p.spell2}`)
@@ -544,6 +523,7 @@ module.exports = {
   unregisterPlayer,
   setTrackerChannel,
   getRegisteredPlayers,
+  getPlayer,
   getTrackerChannel,
   startLolTracker,
   stopLolTracker,

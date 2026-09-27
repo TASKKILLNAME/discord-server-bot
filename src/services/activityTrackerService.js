@@ -32,6 +32,14 @@ async function startTracker(client) {
   console.log('👁️ 활동 감시 시작 (1분 간격)');
 }
 
+function stopTracker() {
+  if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+    console.log('⏹️ 활동 감시 중지됨');
+  }
+}
+
 /**
  * 현황 업데이트
  */
@@ -122,4 +130,4 @@ async function updateTracker(client) {
   }
 }
 
-module.exports = { startTracker };
+module.exports = { startTracker, stopTracker };

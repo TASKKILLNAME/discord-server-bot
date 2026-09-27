@@ -14,7 +14,6 @@ const {
   analyzeRecentMatches,
   parseAnalysisToFields,
 } = require('../services/lolAnalyzer');
-const { hasCredit, useCredit, getCredits } = require('../services/membershipService');
 const { getRegisteredPlayers } = require('../services/lolTrackerService');
 const { buildRecentMatchLayout } = require('../services/matchLayoutService');
 
@@ -65,32 +64,15 @@ module.exports = {
 
   // 등록된 유저 → 바로 전적 검색
   async searchDirect(interaction, gameName, tagLine, targetUser) {
-    // 크레딧 체크
-    if (!(await hasCredit(interaction.guild.id, interaction.user.id))) {
-      const remaining = await getCredits(interaction.guild.id, interaction.user.id);
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 크레딧 부족')
-            .setDescription(
-              `AI 분석 크레딧이 부족합니다. (잔여: ${remaining}회)\n\n\`/멤버십 구매\`로 크레딧을 충전해주세요.`
-            )
-            .setColor(0xff0000),
-        ],
-        ephemeral: true,
-      });
-    }
-
     await interaction.deferReply();
 
     try {
-      const credits = await getCredits(interaction.guild.id, interaction.user.id);
       await interaction.editReply({
         embeds: [
           new EmbedBuilder()
             .setTitle('🔍 전적을 가져오는 중...')
             .setDescription(
-              `<@${targetUser.id}>님의 **${gameName}#${tagLine}** 최근 5게임을 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)\n\n💳 잔여 크레딧: ${credits}회`
+              `<@${targetUser.id}>님의 **${gameName}#${tagLine}** 최근 5게임을 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)`
             )
             .setColor(0xffa500),
         ],
@@ -111,8 +93,6 @@ module.exports = {
 
       const analysis = await analyzeRecentMatches(matchData);
       const analysisFields = parseAnalysisToFields(analysis);
-
-      await useCredit(interaction.guild.id, interaction.user.id, '우클릭 전적 검색');
 
       const layout = buildRecentMatchLayout(matchData, analysisFields, {
         label: `\n-# <@${targetUser.id}>님의 전적 (우클릭 검색)`,

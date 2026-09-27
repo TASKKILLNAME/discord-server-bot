@@ -103,6 +103,9 @@ async function crawlPatchContent(url) {
     });
 
     const $ = cheerio.load(html);
+    $('script, style, nav, footer').remove();
+    $('h1, h2, h3, h4, p, li').prepend('\n');
+
 
     let content = '';
     let title = '';
@@ -134,9 +137,8 @@ async function crawlPatchContent(url) {
       content = $('body').text().trim();
     }
 
-    if (content.length > 15000) {
-      content = content.substring(0, 15000) + '\n\n... (이하 생략)';
-    }
+    // Preserve the article tail: skins, chromas and bug fixes often appear last.
+    content = content.split('관련 글')[0].trim();
 
     return { title, content, url };
   } catch (err) {

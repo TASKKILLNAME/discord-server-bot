@@ -1,3 +1,4 @@
+const { buildSummaryPrompt, sectionFields } = require('./patchLayout');
 const Anthropic = require('@anthropic-ai/sdk');
 const { AI_MODEL } = require('../constants/aiModel');
 
@@ -63,45 +64,7 @@ async function summarizePatchNotes(patchData) {
     return getFallbackSummary('ANTHROPIC_API_KEY가 설정되지 않았습니다');
   }
 
-  const prompt = `다음은 리그 오브 레전드(롤) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
-
-**반드시 아래 형식을 지켜주세요:**
-
-## 📋 패치 요약
-(2-3줄로 이번 패치의 핵심 변경사항 요약)
-
-## 🔺 버프 (상향)
-(상향된 챔피언 목록과 핵심 변경사항. 없으면 "해당 없음")
-- 챔피언이름: 변경 내용 요약
-
-## 🔻 너프 (하향)  
-(하향된 챔피언 목록과 핵심 변경사항. 없으면 "해당 없음")
-- 챔피언이름: 변경 내용 요약
-
-## 🔄 조정
-(상향도 하향도 아닌 조정된 챔피언. 없으면 "해당 없음")
-- 챔피언이름: 변경 내용 요약
-
-## 🗡️ 아이템 변경
-(변경된 아이템과 내용. 없으면 "해당 없음")
-
-## 🛠️ 시스템 변경
-(룬, 소환사 주문, 정글, 맵 등 시스템 변경사항. 없으면 "해당 없음")
-
-## 🐛 버그 수정
-(주요 버그 수정 사항. 없으면 "해당 없음")
-
-## 🎨 스킨
-(새로 출시되는 스킨. 없으면 "해당 없음")
-
-**규칙:**
-- 구체적인 수치(데미지, 쿨다운 등)가 있으면 포함
-- 너무 길지 않게, 각 항목은 1-2줄로 요약
-- 중요도가 높은 변경사항 위주로 정리
-- 이모지를 적절히 활용
-
-패치노트 내용:
-${patchData.content}`;
+  const prompt = buildSummaryPrompt('lol', patchData);
 
   try {
     return await callClaude(anthropic, prompt, '롤');
@@ -127,41 +90,7 @@ function getFallbackSummary(reason) {
  * 2000자 제한에 맞게 분할
  */
 function formatForDiscord(summary, patchData) {
-  const sections = [];
-  const lines = summary.split('\n');
-
-  let currentSection = { title: '', content: '' };
-
-  for (const line of lines) {
-    // ## 으로 시작하는 새 섹션 감지
-    if (line.startsWith('## ')) {
-      if (currentSection.title) {
-        sections.push({ ...currentSection });
-      }
-      currentSection = {
-        title: line.replace('## ', '').trim(),
-        content: '',
-      };
-    } else if (line.trim()) {
-      currentSection.content += line + '\n';
-    }
-  }
-
-  // 마지막 섹션 추가
-  if (currentSection.title) {
-    sections.push(currentSection);
-  }
-
-  // Embed fields 생성 (각 필드 1024자 제한)
-  const fields = sections
-    .filter((s) => s.content.trim())
-    .map((s) => ({
-      name: s.title,
-      value:
-        s.content.trim().length > 1024
-          ? s.content.trim().substring(0, 1021) + '...'
-          : s.content.trim(),
-    }));
+  const fields = sectionFields(summary);
 
   return {
     title: `📰 ${patchData.title}`,
@@ -171,9 +100,6 @@ function formatForDiscord(summary, patchData) {
     timestamp: new Date().toISOString(),
     footer: {
       text: '🤖 AI 요약 | 자세한 내용은 원문 확인',
-    },
-    thumbnail: {
-      url: 'https://images.contentstack.io/v3/assets/blt731acb42bb3d1659/blt63f045f1aa0e2440/5ef1132f90d2de3ed4bbe867/LOL_PROMOART_2.jpg',
     },
   };
 }
@@ -239,43 +165,7 @@ async function summarizeTftPatchNotes(patchData) {
     return getFallbackSummary('ANTHROPIC_API_KEY가 설정되지 않았습니다');
   }
 
-  const prompt = `다음은 전략적 팀 전투(TFT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
-
-**반드시 아래 형식을 지켜주세요:**
-
-## 📋 패치 요약
-(2-3줄로 이번 TFT 패치의 핵심 변경사항 요약)
-
-## 🔺 버프 (상향)
-(상향된 챔피언/특성 목록. 없으면 "해당 없음")
-- 이름: 변경 내용 요약
-
-## 🔻 너프 (하향)
-(하향된 챔피언/특성 목록. 없으면 "해당 없음")
-- 이름: 변경 내용 요약
-
-## 🔄 특성 변경
-(특성(시너지) 변경사항. 없으면 "해당 없음")
-
-## 🗡️ 아이템 변경
-(변경된 아이템. 없으면 "해당 없음")
-
-## 🌀 증강 변경
-(증강체 변경사항. 없으면 "해당 없음")
-
-## 🛠️ 시스템 변경
-(상점, 골드, 레벨링 등 시스템 변경. 없으면 "해당 없음")
-
-## 🐛 버그 수정
-(주요 버그 수정. 없으면 "해당 없음")
-
-**규칙:**
-- 구체적인 수치가 있으면 포함 (예: "체력 800 → 900")
-- 각 항목은 1-2줄로 요약
-- 이모지를 적절히 활용
-
-패치노트 내용:
-${patchData.content}`;
+  const prompt = buildSummaryPrompt('tft', patchData);
 
   try {
     return await callClaude(anthropic, prompt, 'TFT');
@@ -285,29 +175,7 @@ ${patchData.content}`;
 }
 
 function formatTftForDiscord(summary, patchData) {
-  const sections = [];
-  const lines = summary.split('\n');
-  let currentSection = { title: '', content: '' };
-
-  for (const line of lines) {
-    if (line.startsWith('## ')) {
-      if (currentSection.title) sections.push({ ...currentSection });
-      currentSection = { title: line.replace('## ', '').trim(), content: '' };
-    } else if (line.trim()) {
-      currentSection.content += line + '\n';
-    }
-  }
-  if (currentSection.title) sections.push(currentSection);
-
-  const fields = sections
-    .filter((s) => s.content.trim())
-    .map((s) => ({
-      name: s.title,
-      value:
-        s.content.trim().length > 1024
-          ? s.content.trim().substring(0, 1021) + '...'
-          : s.content.trim(),
-    }));
+  const fields = sectionFields(summary);
 
   return {
     title: `🎮 ${patchData.title}`,
@@ -316,9 +184,6 @@ function formatTftForDiscord(summary, patchData) {
     color: 0xc89b3c, // TFT 골드 컬러
     timestamp: new Date().toISOString(),
     footer: { text: '🤖 AI 요약 | 자세한 내용은 원문 확인' },
-    thumbnail: {
-      url: 'https://images.contentstack.io/v3/assets/blt731acb42bb3d1659/bltc3572889a8f37be9/5fb56ca12ea50d5e4d7da47b/TFT_LOGO.png',
-    },
   };
 }
 
@@ -332,44 +197,7 @@ async function summarizeValorantPatchNotes(patchData) {
     return getFallbackSummary('ANTHROPIC_API_KEY가 설정되지 않았습니다');
   }
 
-  const prompt = `다음은 발로란트(VALORANT) 패치노트 내용입니다. 이 내용을 분석해서 아래 형식으로 한국어 요약을 작성해주세요.
-
-**반드시 아래 형식을 지켜주세요:**
-
-## 📋 패치 요약
-(2-3줄로 이번 발로란트 패치의 핵심 변경사항 요약)
-
-## 🔺 버프 (상향)
-(상향된 요원/무기 목록. 없으면 "해당 없음")
-- 이름: 변경 내용 요약
-
-## 🔻 너프 (하향)
-(하향된 요원/무기 목록. 없으면 "해당 없음")
-- 이름: 변경 내용 요약
-
-## 🧬 요원 변경
-(기타 요원 조정. 없으면 "해당 없음")
-- 요원이름: 변경 내용 요약
-
-## 🔫 무기 변경
-(무기 밸런스 변경. 없으면 "해당 없음")
-
-## 🗺️ 맵 변경
-(맵 업데이트. 없으면 "해당 없음")
-
-## 🛠️ 게임 시스템 변경
-(경제, 스파이크, 커리어 등 시스템 변경. 없으면 "해당 없음")
-
-## 🐛 버그 수정
-(주요 버그 수정. 없으면 "해당 없음")
-
-**규칙:**
-- 구체적인 수치가 있으면 포함
-- 각 항목은 1-2줄로 요약
-- 이모지를 적절히 활용
-
-패치노트 내용:
-${patchData.content}`;
+  const prompt = buildSummaryPrompt('valorant', patchData);
 
   try {
     return await callClaude(anthropic, prompt, '발로란트');
@@ -379,29 +207,7 @@ ${patchData.content}`;
 }
 
 function formatValorantForDiscord(summary, patchData) {
-  const sections = [];
-  const lines = summary.split('\n');
-  let currentSection = { title: '', content: '' };
-
-  for (const line of lines) {
-    if (line.startsWith('## ')) {
-      if (currentSection.title) sections.push({ ...currentSection });
-      currentSection = { title: line.replace('## ', '').trim(), content: '' };
-    } else if (line.trim()) {
-      currentSection.content += line + '\n';
-    }
-  }
-  if (currentSection.title) sections.push(currentSection);
-
-  const fields = sections
-    .filter((s) => s.content.trim())
-    .map((s) => ({
-      name: s.title,
-      value:
-        s.content.trim().length > 1024
-          ? s.content.trim().substring(0, 1021) + '...'
-          : s.content.trim(),
-    }));
+  const fields = sectionFields(summary);
 
   return {
     title: `🔫 ${patchData.title}`,
@@ -410,9 +216,6 @@ function formatValorantForDiscord(summary, patchData) {
     color: 0xff4655, // 발로란트 레드 컬러
     timestamp: new Date().toISOString(),
     footer: { text: '🤖 AI 요약 | 자세한 내용은 원문 확인' },
-    thumbnail: {
-      url: 'https://images.contentstack.io/v3/assets/bltb6530b271fddd0b1/blt8a9da6d9e84cdee7/5f7a73cc64c8cc5c26fc4ac5/VALORANT_logo_image.jpg',
-    },
   };
 }
 

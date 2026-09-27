@@ -18,18 +18,31 @@ const {
   unregisterPlayer,
   setTrackerChannel,
   getRegisteredPlayers,
+  getPlayer,
   getTrackerChannel,
   ensureTrackerRole,
   setChannelPermissions,
   addTrackerRole,
   removeTrackerRole,
 } = require('../services/lolTrackerService');
-const { hasCredit, useCredit, getCredits } = require('../services/membershipService');
 const {
   buildRecentMatchLayout,
   buildLiveGameLayout,
   buildSingleMatchLayout,
 } = require('../services/matchLayoutService');
+const {
+  USAGE_TEXT: PREDICTION_USAGE_TEXT,
+  PredictionError,
+  predictForTarget,
+  tryAcquireCooldown,
+  isRiotApiConfigured,
+  parsePredictionOptions,
+  classifyPredictionError,
+  describeErrorForLog,
+  buildPredictionEmbed,
+} = require('../services/lolPredictionService');
+
+const NO_MENTIONS = { parse: [] };
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -100,6 +113,20 @@ module.exports = {
             .setMinValue(1)
             .setMaxValue(20)
         )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('승부예측')
+        .setDescription('최근 솔랭 전적 기반 다음 판 승패 참고 추정 (AI 미사용)')
+        .addUserOption((opt) =>
+          opt.setName('멤버').setDescription('이 서버에 등록된 멤버 (미입력 시 본인)')
+        )
+        .addStringOption((opt) =>
+          opt.setName('소환사명').setDescription('직접 입력할 게임 이름 (태그와 함께 입력)').setMaxLength(32)
+        )
+        .addStringOption((opt) =>
+          opt.setName('태그').setDescription('직접 입력할 태그라인 (예: KR1)').setMaxLength(10)
+        )
     ),
 
   async execute(interaction) {
@@ -118,6 +145,8 @@ module.exports = {
         return this.liveGame(interaction);
       case '최근전적':
         return this.recentMatches(interaction);
+      case '승부예측':
+        return this.predict(interaction);
     }
   },
 
@@ -273,31 +302,13 @@ module.exports = {
     const gameName = interaction.options.getString('소환사명');
     const tagLine = interaction.options.getString('태그');
 
-    // 크레딧 보유 체크 (차감은 AI 분석 성공 후)
-    if (!(await hasCredit(interaction.guild.id, interaction.user.id))) {
-      const remaining = await getCredits(interaction.guild.id, interaction.user.id);
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 크레딧 부족')
-            .setDescription(
-              `AI 분석 크레딧이 부족합니다. (잔여: ${remaining}회)\n\n` +
-                '`/멤버십 구매`로 크레딧을 충전해주세요.'
-            )
-            .setColor(0xff0000),
-        ],
-        ephemeral: true,
-      });
-    }
-
     await interaction.deferReply();
 
     try {
-      const credits = await getCredits(interaction.guild.id, interaction.user.id);
       const loadingEmbed = new EmbedBuilder()
         .setTitle('🔍 실시간 게임 정보를 가져오는 중...')
         .setDescription(
-          `**${gameName}#${tagLine}** 소환사를 검색하고 AI가 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)\n\n💳 잔여 크레딧: ${credits}회`
+          `**${gameName}#${tagLine}** 소환사를 검색하고 AI가 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)`
         )
         .setColor(0xffa500);
       await interaction.editReply({ embeds: [loadingEmbed] });
@@ -330,9 +341,6 @@ module.exports = {
         const analysis = await analyzeRecentMatches(matchData);
         const fields = parseAnalysisToFields(analysis);
 
-        // ✅ AI 분석 성공 → 크레딧 차감
-        await useCredit(interaction.guild.id, interaction.user.id, '실시간 분석 (최근게임 대체)');
-
         const layout = buildSingleMatchLayout(matchData, fields, gameName, tagLine);
         return interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
       }
@@ -340,9 +348,6 @@ module.exports = {
       // 실시간 게임 분석
       const analysis = await analyzeLiveGame(gameData);
       const analysisFields = parseAnalysisToFields(analysis);
-
-      // ✅ AI 분석 성공 → 크레딧 차감
-      await useCredit(interaction.guild.id, interaction.user.id, '실시간 분석');
 
       const layout = buildLiveGameLayout(gameData, analysisFields, gameName, tagLine);
       await interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
@@ -369,31 +374,13 @@ module.exports = {
     const tagLine = interaction.options.getString('태그');
     const count = interaction.options.getInteger('횟수') || 5;
 
-    // 크레딧 보유 체크 (차감은 AI 분석 성공 후)
-    if (!(await hasCredit(interaction.guild.id, interaction.user.id))) {
-      const remaining = await getCredits(interaction.guild.id, interaction.user.id);
-      return interaction.reply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 크레딧 부족')
-            .setDescription(
-              `AI 분석 크레딧이 부족합니다. (잔여: ${remaining}회)\n\n` +
-                '`/멤버십 구매`로 크레딧을 충전해주세요.'
-            )
-            .setColor(0xff0000),
-        ],
-        ephemeral: true,
-      });
-    }
-
     await interaction.deferReply();
 
     try {
-      const credits = await getCredits(interaction.guild.id, interaction.user.id);
       const loadingEmbed = new EmbedBuilder()
         .setTitle('🔍 최근 전적을 가져오는 중...')
         .setDescription(
-          `**${gameName}#${tagLine}** 최근 ${count}게임을 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)\n\n💳 잔여 크레딧: ${credits}회`
+          `**${gameName}#${tagLine}** 최근 ${count}게임을 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)`
         )
         .setColor(0xffa500);
       await interaction.editReply({ embeds: [loadingEmbed] });
@@ -415,9 +402,6 @@ module.exports = {
       const analysis = await analyzeRecentMatches(matchData);
       const analysisFields = parseAnalysisToFields(analysis);
 
-      // ✅ AI 분석 성공 → 크레딧 차감
-      await useCredit(interaction.guild.id, interaction.user.id, '최근전적 분석');
-
       const layout = buildRecentMatchLayout(matchData, analysisFields);
       await interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
     } catch (err) {
@@ -432,6 +416,69 @@ module.exports = {
             .setColor(0xff0000),
         ],
       });
+    }
+  },
+
+  // ============================================
+  // 🔮 다음 솔랭 승부 예측 (LLM 미사용)
+  // ============================================
+  async predict(interaction) {
+    if (!interaction.guild) {
+      return interaction.reply({ content: '❌ 서버 안에서만 사용할 수 있습니다.', ephemeral: true });
+    }
+
+    const parsed = parsePredictionOptions({
+      member: interaction.options.getUser('멤버'),
+      gameName: interaction.options.getString('소환사명'),
+      tagLine: interaction.options.getString('태그'),
+    });
+    if (parsed.error) {
+      return interaction.reply({
+        content: `❌ ${parsed.error}\n\n${PREDICTION_USAGE_TEXT}`,
+        ephemeral: true,
+        allowedMentions: NO_MENTIONS,
+      });
+    }
+
+    if (!isRiotApiConfigured()) {
+      return interaction.reply({ content: `❌ ${new PredictionError('NO_API_KEY').userMessage}`, ephemeral: true });
+    }
+
+    const waitMs = tryAcquireCooldown(interaction.guild.id, interaction.user.id);
+    if (waitMs > 0) {
+      return interaction.reply({
+        content: `⏳ ${Math.ceil(waitMs / 1000)}초 후에 다시 시도해주세요.`,
+        ephemeral: true,
+      });
+    }
+
+    await interaction.deferReply();
+
+    try {
+      let target;
+      if (parsed.mode === 'direct') {
+        target = { gameName: parsed.gameName, tagLine: parsed.tagLine };
+      } else {
+        const userId = parsed.mode === 'member' ? parsed.member.id : interaction.user.id;
+        const player = await getPlayer(interaction.guild.id, userId);
+        if (!player) {
+          const who = parsed.mode === 'member' ? `<@${userId}>님은` : '회원님은';
+          return interaction.editReply({
+            content: `❌ ${who} 이 서버에 등록된 롤 계정이 없습니다. \`/전적 등록\`으로 먼저 등록해주세요.`,
+            allowedMentions: NO_MENTIONS,
+          });
+        }
+        target = { puuid: player.puuid, gameName: player.gameName, tagLine: player.tagLine };
+      }
+
+      const result = await predictForTarget(target);
+      await interaction.editReply({ embeds: [buildPredictionEmbed(result)], allowedMentions: NO_MENTIONS });
+    } catch (err) {
+      console.error(`승부예측 오류: ${describeErrorForLog(err)}`);
+      const { message } = classifyPredictionError(err);
+      await interaction
+        .editReply({ content: `❌ ${message}`, embeds: [], allowedMentions: NO_MENTIONS })
+        .catch((editErr) => console.error(`승부예측 응답 실패: ${editErr.message}`));
     }
   },
 };

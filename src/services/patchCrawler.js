@@ -103,6 +103,9 @@ async function crawlPatchContent(url) {
     });
 
     const $ = cheerio.load(html);
+    $('script, style, nav, footer').remove();
+    $('h1, h2, h3, h4, p, li').prepend('\n');
+
 
     // 패치노트 본문 추출
     let content = '';
@@ -141,10 +144,8 @@ async function crawlPatchContent(url) {
       content = $('body').text().trim();
     }
 
-    // 너무 긴 내용은 잘라내기 (Claude API 토큰 절약)
-    if (content.length > 15000) {
-      content = content.substring(0, 15000) + '\n\n... (이하 생략)';
-    }
+    // Preserve the article tail: skins, chromas and bug fixes often appear last.
+    content = content.split('관련 글')[0].trim();
 
     return { title, content, url };
   } catch (err) {

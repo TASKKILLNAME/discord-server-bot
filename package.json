@@ -4,12 +4,21 @@
   "description": "디스코드 서버를 원하는대로 자동 구성해주는 봇",
   "main": "src/index.js",
   "scripts": {
+    "test": "node --test",
+    "test:patch": "node --test tests/patch-duplicate.test.js tests/patch-layout.test.js",
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "deploy-commands": "node src/deploy-commands.js"
+    "deploy-commands": "node src/deploy-commands.js",
+    "local:check": "node scripts/check-local-setup.js",
+    "local:db:install": "node scripts/local-control.js db:install",
+    "local:install": "node scripts/local-control.js install",
+    "local:start": "node scripts/local-control.js start",
+    "local:stop": "node scripts/local-control.js stop",
+    "local:status": "node scripts/local-control.js status",
+    "local:uninstall": "node scripts/local-control.js uninstall"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "^18.17.0 || ^20.3.0 || >=21.0.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

@@ -145,6 +145,13 @@ module.exports = {
   },
 
   async kickMember(interaction) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: '❌ 킥은 관리자만 사용할 수 있습니다.',
+        ephemeral: true,
+      });
+    }
+
     const member = interaction.options.getMember('멤버');
     const reason = interaction.options.getString('사유') || '사유 없음';
 
@@ -173,6 +180,13 @@ module.exports = {
   },
 
   async banMember(interaction) {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: '❌ 밴은 관리자만 사용할 수 있습니다.',
+        ephemeral: true,
+      });
+    }
+
     const member = interaction.options.getMember('멤버');
     const reason = interaction.options.getString('사유') || '사유 없음';
 

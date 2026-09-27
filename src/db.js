@@ -5,6 +5,7 @@ const isPublicRailway   = process.env.DATABASE_URL?.includes('railway.app');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  connectionTimeoutMillis: 10_000,
   ssl: isInternalRailway ? false
      : isPublicRailway   ? { rejectUnauthorized: false }
      : false,
@@ -68,26 +69,15 @@ async function initDb() {
       );
     `);
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS memberships (
-        guild_id        VARCHAR(20) NOT NULL,
-        user_id         VARCHAR(20) NOT NULL,
-        credits         INTEGER     DEFAULT 0,
-        total_purchased INTEGER     DEFAULT 0,
-        tier            VARCHAR(20),
-        PRIMARY KEY (guild_id, user_id)
-      );
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS membership_history (
-        id        SERIAL PRIMARY KEY,
-        guild_id  VARCHAR(20) NOT NULL,
-        user_id   VARCHAR(20) NOT NULL,
-        type      VARCHAR(10) NOT NULL,
-        amount    INTEGER     NOT NULL,
-        action    TEXT,
-        tier      VARCHAR(20),
-        admin_id  VARCHAR(20),
-        created_at TIMESTAMPTZ DEFAULT NOW()
+      CREATE TABLE IF NOT EXISTS patch_deliveries (
+        game TEXT NOT NULL,
+        channel_id VARCHAR(20) NOT NULL,
+        patch_url TEXT NOT NULL,
+        payloads JSONB NOT NULL,
+        next_index INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        sent_at TIMESTAMPTZ,
+        PRIMARY KEY (game, channel_id, patch_url)
       );
     `);
     await pool.query(`
@@ -127,10 +117,11 @@ async function initDb() {
         PRIMARY KEY (guild_id, user_id)
       );
     `);
-    console.log('✅ DB 초기화 완료 (levels, welcome_settings, lol_tracker, patch_state, memberships, patch_channels, titles, limbus_profiles 테이블)');
+    console.log('✅ DB 초기화 완료 (levels, welcome_settings, lol_tracker, patch_state, patch_channels, titles, limbus_profiles 테이블)');
   } catch (err) {
     console.error('❌ DB 초기화 실패:', err.message);
     console.error('   DATABASE_URL 설정 확인:', process.env.DATABASE_URL ? '있음' : '없음');
+    throw err;
   }
 }
 

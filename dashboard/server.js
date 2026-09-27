@@ -7,6 +7,23 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const app = express();
 const PORT = process.env.DASHBOARD_PORT || 3000;
+const DASHBOARD_URL = (process.env.DASHBOARD_URL || `http://localhost:${PORT}`)
+  .replace(/\/+$/, '');
+
+function getDashboardHost() {
+  if (process.env.DASHBOARD_HOST) return process.env.DASHBOARD_HOST;
+
+  try {
+    const hostname = new URL(DASHBOARD_URL).hostname;
+    if (['::1', '[::1]'].includes(hostname)) return '::1';
+    if (['localhost', '127.0.0.1'].includes(hostname)) return '127.0.0.1';
+    return '0.0.0.0';
+  } catch {
+    return '127.0.0.1';
+  }
+}
+
+const DASHBOARD_HOST = getDashboardHost();
 
 // ============================================
 // Middleware
@@ -14,13 +31,13 @@ const PORT = process.env.DASHBOARD_PORT || 3000;
 app.use(express.json());
 app.use(
   cors({
-    origin: process.env.DASHBOARD_URL || 'http://localhost:3000',
+    origin: DASHBOARD_URL,
     credentials: true,
   })
 );
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'discord-bot-dashboard-secret-key',
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -59,6 +76,17 @@ function requireAuth(req, res, next) {
   next();
 }
 
+function requireGuildAccess(req, res, next) {
+  const guilds = req.session.user?.guilds;
+  const hasAccess = Array.isArray(guilds)
+    && guilds.some((guild) => guild.id === req.params.guildId);
+
+  if (!hasAccess) {
+    return res.status(403).json({ error: '이 서버를 관리할 권한이 없습니다.' });
+  }
+  next();
+}
+
 // ============================================
 // Discord OAuth2 Routes
 // ============================================
@@ -67,7 +95,7 @@ function requireAuth(req, res, next) {
 app.get('/auth/discord', (req, res) => {
   const params = new URLSearchParams({
     client_id: process.env.CLIENT_ID,
-    redirect_uri: `${process.env.DASHBOARD_URL || 'http://localhost:3000'}/auth/discord/callback`,
+    redirect_uri: `${DASHBOARD_URL}/auth/discord/callback`,
     response_type: 'code',
     scope: 'identify guilds',
   });
@@ -91,7 +119,7 @@ app.get('/auth/discord/callback', async (req, res) => {
         client_secret: process.env.CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
-        redirect_uri: `${process.env.DASHBOARD_URL || 'http://localhost:3000'}/auth/discord/callback`,
+        redirect_uri: `${DASHBOARD_URL}/auth/discord/callback`,
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
@@ -160,14 +188,10 @@ app.post('/api/auth/logout', (req, res) => {
 // ============================================
 
 // Get server info
-app.get('/api/guilds/:guildId', requireAuth, requireBot, async (req, res) => {
+app.get('/api/guilds/:guildId', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
-
-    // Check user has access
-    const userGuild = req.session.user.guilds.find((g) => g.id === guild.id);
-    if (!userGuild) return res.status(403).json({ error: '접근 권한이 없습니다.' });
 
     const members = await guild.members.fetch();
     const onlineMembers = members.filter(
@@ -198,7 +222,7 @@ app.get('/api/guilds/:guildId', requireAuth, requireBot, async (req, res) => {
 // ============================================
 
 // Get channels
-app.get('/api/guilds/:guildId/channels', requireAuth, requireBot, (req, res) => {
+app.get('/api/guilds/:guildId/channels', requireAuth, requireGuildAccess, requireBot, (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -219,7 +243,7 @@ app.get('/api/guilds/:guildId/channels', requireAuth, requireBot, (req, res) => 
 });
 
 // Create channel
-app.post('/api/guilds/:guildId/channels', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/channels', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -244,7 +268,7 @@ app.post('/api/guilds/:guildId/channels', requireAuth, requireBot, async (req, r
 });
 
 // Delete channel
-app.delete('/api/guilds/:guildId/channels/:channelId', requireAuth, requireBot, async (req, res) => {
+app.delete('/api/guilds/:guildId/channels/:channelId', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -264,7 +288,7 @@ app.delete('/api/guilds/:guildId/channels/:channelId', requireAuth, requireBot, 
 // ============================================
 
 // Get roles
-app.get('/api/guilds/:guildId/roles', requireAuth, requireBot, (req, res) => {
+app.get('/api/guilds/:guildId/roles', requireAuth, requireGuildAccess, requireBot, (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -289,7 +313,7 @@ app.get('/api/guilds/:guildId/roles', requireAuth, requireBot, (req, res) => {
 });
 
 // Create role
-app.post('/api/guilds/:guildId/roles', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/roles', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -314,7 +338,7 @@ app.post('/api/guilds/:guildId/roles', requireAuth, requireBot, async (req, res)
 });
 
 // Delete role
-app.delete('/api/guilds/:guildId/roles/:roleId', requireAuth, requireBot, async (req, res) => {
+app.delete('/api/guilds/:guildId/roles/:roleId', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -334,7 +358,7 @@ app.delete('/api/guilds/:guildId/roles/:roleId', requireAuth, requireBot, async 
 // ============================================
 
 // Get members
-app.get('/api/guilds/:guildId/members', requireAuth, requireBot, async (req, res) => {
+app.get('/api/guilds/:guildId/members', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -367,7 +391,7 @@ app.get('/api/guilds/:guildId/members', requireAuth, requireBot, async (req, res
 });
 
 // Kick member
-app.post('/api/guilds/:guildId/members/:memberId/kick', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/members/:memberId/kick', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -384,7 +408,7 @@ app.post('/api/guilds/:guildId/members/:memberId/kick', requireAuth, requireBot,
 });
 
 // Ban member
-app.post('/api/guilds/:guildId/members/:memberId/ban', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/members/:memberId/ban', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -401,7 +425,7 @@ app.post('/api/guilds/:guildId/members/:memberId/ban', requireAuth, requireBot, 
 });
 
 // Timeout member
-app.post('/api/guilds/:guildId/members/:memberId/timeout', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/members/:memberId/timeout', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -418,7 +442,7 @@ app.post('/api/guilds/:guildId/members/:memberId/timeout', requireAuth, requireB
 });
 
 // Assign role to member
-app.post('/api/guilds/:guildId/members/:memberId/roles/:roleId', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/members/:memberId/roles/:roleId', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -436,7 +460,7 @@ app.post('/api/guilds/:guildId/members/:memberId/roles/:roleId', requireAuth, re
 });
 
 // Remove role from member
-app.delete('/api/guilds/:guildId/members/:memberId/roles/:roleId', requireAuth, requireBot, async (req, res) => {
+app.delete('/api/guilds/:guildId/members/:memberId/roles/:roleId', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -457,7 +481,7 @@ app.delete('/api/guilds/:guildId/members/:memberId/roles/:roleId', requireAuth, 
 // Server Setup (Templates) Route
 // ============================================
 
-app.post('/api/guilds/:guildId/setup', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/setup', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -491,7 +515,7 @@ app.post('/api/guilds/:guildId/setup', requireAuth, requireBot, async (req, res)
 // Patch Notes Route
 // ============================================
 
-app.post('/api/guilds/:guildId/patchnotes/check', requireAuth, requireBot, async (req, res) => {
+app.post('/api/guilds/:guildId/patchnotes/check', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const { forceGetLatestPatch } = require('../src/services/patchCrawler');
     const { sendPatchToChannel } = require('../src/services/patchScheduler');
@@ -532,7 +556,7 @@ app.get('/api/patchnotes/status', requireAuth, (req, res) => {
 // Server Settings Routes
 // ============================================
 
-app.patch('/api/guilds/:guildId/settings', requireAuth, requireBot, async (req, res) => {
+app.patch('/api/guilds/:guildId/settings', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -599,7 +623,7 @@ app.get('/api/guilds/:guildId/leaderboard', requireBot, async (req, res) => {
 // Stats Route (for dashboard)
 // ============================================
 
-app.get('/api/guilds/:guildId/stats', requireAuth, requireBot, async (req, res) => {
+app.get('/api/guilds/:guildId/stats', requireAuth, requireGuildAccess, requireBot, async (req, res) => {
   try {
     const guild = botClient.guilds.cache.get(req.params.guildId);
     if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
@@ -644,193 +668,6 @@ app.get('/api/auth/is-owner', requireAuth, (req, res) => {
   res.json({ isOwner: req.session.user.id === process.env.BOT_OWNER_ID });
 });
 
-// 전체 멤버십 통계
-app.get('/api/membership/stats', requireOwner, async (req, res) => {
-  try {
-    const { getMembershipStats } = require('../src/services/membershipService');
-    const stats = await getMembershipStats();
-
-    // 서버 이름 매핑
-    if (botClient) {
-      for (const guildId of Object.keys(stats.serverStats)) {
-        const guild = botClient.guilds.cache.get(guildId);
-        stats.serverStats[guildId].name = guild?.name || `알 수 없는 서버 (${guildId})`;
-      }
-    }
-
-    res.json(stats);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 전체 서버 멤버십 데이터
-app.get('/api/membership', requireOwner, async (req, res) => {
-  try {
-    const { getAllMembershipData } = require('../src/services/membershipService');
-    const data = await getAllMembershipData();
-
-    // 서버 이름 + 유저 이름 매핑
-    const result = {};
-    for (const [guildId, users] of Object.entries(data)) {
-      const guild = botClient?.guilds.cache.get(guildId);
-      result[guildId] = {
-        guildName: guild?.name || `알 수 없는 서버`,
-        users: {},
-      };
-      for (const [userId, info] of Object.entries(users)) {
-        const member = guild?.members.cache.get(userId);
-        result[guildId].users[userId] = {
-          ...info,
-          username: member?.user.username || member?.user.tag || `유저 ${userId}`,
-          displayName: member?.displayName || `유저 ${userId}`,
-        };
-      }
-    }
-
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 특정 서버 멤버십 데이터
-app.get('/api/membership/:guildId', requireOwner, requireBot, async (req, res) => {
-  try {
-    const { getGuildMembershipData } = require('../src/services/membershipService');
-    const guildId = req.params.guildId;
-    const guild = botClient.guilds.cache.get(guildId);
-    const users = await getGuildMembershipData(guildId);
-
-    // 멤버 정보 fetch
-    if (guild) {
-      try { await guild.members.fetch(); } catch (e) { /* 무시 */ }
-    }
-
-    const result = {};
-    for (const [userId, info] of Object.entries(users)) {
-      const member = guild?.members.cache.get(userId);
-      result[userId] = {
-        ...info,
-        username: member?.user.username || `유저 ${userId}`,
-        displayName: member?.displayName || `유저 ${userId}`,
-        avatar: member?.user.displayAvatarURL({ dynamic: true, size: 64 }) || null,
-      };
-    }
-
-    res.json({
-      guildId,
-      guildName: guild?.name || '알 수 없는 서버',
-      users: result,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 봇이 참여한 전체 서버 목록 (수동 충전 대상 서버 선택용)
-app.get('/api/membership/guilds', requireOwner, requireBot, (req, res) => {
-  try {
-    const guilds = botClient.guilds.cache.map((g) => ({
-      id: g.id,
-      name: g.name,
-      icon: g.iconURL({ dynamic: true, size: 64 }),
-      memberCount: g.memberCount,
-    }));
-    res.json(guilds);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 특정 서버 전체 멤버 목록 (멤버십 데이터 없는 유저도 포함)
-app.get('/api/membership/guilds/:guildId/members', requireOwner, requireBot, async (req, res) => {
-  try {
-    const guild = botClient.guilds.cache.get(req.params.guildId);
-    if (!guild) return res.status(404).json({ error: '서버를 찾을 수 없습니다.' });
-
-    const { getGuildMembershipData } = require('../src/services/membershipService');
-    const membershipData = await getGuildMembershipData(req.params.guildId);
-
-    const members = await guild.members.fetch();
-    const memberList = members
-      .filter((m) => !m.user.bot)
-      .map((m) => ({
-        id: m.id,
-        username: m.user.username,
-        displayName: m.displayName,
-        avatar: m.user.displayAvatarURL({ dynamic: true, size: 64 }),
-        credits: membershipData[m.id]?.credits || 0,
-        hasMembership: !!membershipData[m.id],
-      }))
-      .sort((a, b) => b.credits - a.credits);
-
-    res.json(memberList);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 크레딧 충전 (봇 오너) + 유저 DM 알림
-app.post('/api/membership/:guildId/:userId/charge', requireOwner, requireBot, async (req, res) => {
-  try {
-    const { chargeCredits, TIERS } = require('../src/services/membershipService');
-    const { guildId, userId } = req.params;
-    const { amount, tier, sendDm } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: '충전할 크레딧 수를 입력해주세요.' });
-    }
-
-    // 티어 이름 판별
-    let tierName = tier || '커스텀';
-    if (!tier) {
-      for (const [, t] of Object.entries(TIERS)) {
-        if (t.credits === amount) {
-          tierName = t.name;
-          break;
-        }
-      }
-    }
-
-    const result = await chargeCredits(guildId, userId, amount, tierName, process.env.BOT_OWNER_ID);
-
-    // 유저에게 DM 알림 전송
-    let dmSent = false;
-    if (sendDm !== false) {
-      try {
-        const { EmbedBuilder } = require('discord.js');
-        const targetUser = await botClient.users.fetch(userId);
-        const guild = botClient.guilds.cache.get(guildId);
-        const serverName = guild?.name || '서버';
-
-        await targetUser.send({
-          embeds: [
-            new EmbedBuilder()
-              .setTitle('✅ 크레딧 충전 완료!')
-              .setDescription(
-                `**${serverName}**에서 크레딧이 충전되었습니다!\n\n` +
-                  `🏷️ 티어: ${tierName}\n` +
-                  `➕ 충전: ${amount}회\n` +
-                  `💳 잔여 크레딧: **${result.credits}회**\n\n` +
-                  '`/멤버십 정보`로 확인할 수 있습니다.'
-              )
-              .setColor(0x57f287)
-              .setTimestamp(),
-          ],
-        });
-        dmSent = true;
-      } catch (dmErr) {
-        console.error('충전 DM 전송 실패:', dmErr.message);
-      }
-    }
-
-    res.json({ success: true, dmSent, ...result });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ============================================
 // Intro Page
 // ============================================
@@ -851,10 +688,19 @@ app.get('*', (req, res) => {
 function startDashboard(client) {
   setBotClient(client);
 
-  app.listen(PORT, () => {
-    console.log(`\n🌐 대시보드: http://localhost:${PORT}`);
-    console.log(`🔗 OAuth2 콜백: http://localhost:${PORT}/auth/discord/callback`);
-    console.log('');
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT, DASHBOARD_HOST);
+    const onError = (error) => reject(error);
+
+    server.once('error', onError);
+    server.once('listening', () => {
+      server.off('error', onError);
+      console.log(`\n🌐 대시보드: ${DASHBOARD_URL}`);
+      console.log(`🔒 대시보드 바인딩: ${DASHBOARD_HOST}:${PORT}`);
+      console.log(`🔗 OAuth2 콜백: ${DASHBOARD_URL}/auth/discord/callback`);
+      console.log('');
+      resolve(server);
+    });
   });
 }
 

@@ -21,41 +21,108 @@ let spellsData = null;
 // ============================================
 let requestQueue = Promise.resolve();
 const MIN_INTERVAL = 60; // 60ms (~16 req/sec, 20 한도 내)
+const DEFAULT_RETRY_AFTER_SEC = 5;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function riotApiRequest(url, retries = 2) {
+function createAbortError(signal) {
+  if (signal?.reason instanceof Error) return signal.reason;
+  const err = new Error('Riot API 요청이 취소되었습니다.');
+  err.name = 'AbortError';
+  return err;
+}
+
+// "20:1,100:120" → Map(windowSec → 값)
+function parseRateLimitHeader(value) {
+  const result = new Map();
+  if (typeof value !== 'string') return result;
+  for (const part of value.split(',')) {
+    const [amount, windowSec] = part.split(':').map(Number);
+    if (Number.isFinite(amount) && Number.isFinite(windowSec)) result.set(windowSec, amount);
+  }
+  return result;
+}
+
+/**
+ * 응답 헤더상 이미 한도에 도달한 창이 있으면 그 창 길이만큼 다음 요청을 늦춘다.
+ * (짧은 호출 간격만으로는 2분당 한도를 지킬 수 없으므로)
+ */
+function getRateLimitWaitMs(headers = {}) {
+  let waitMs = 0;
+  for (const scope of ['app', 'method']) {
+    const limits = parseRateLimitHeader(headers[`x-${scope}-rate-limit`]);
+    const counts = parseRateLimitHeader(headers[`x-${scope}-rate-limit-count`]);
+    for (const [windowSec, count] of counts) {
+      const limit = limits.get(windowSec);
+      if (limit && count >= limit) waitMs = Math.max(waitMs, windowSec * 1000);
+    }
+  }
+  return waitMs;
+}
+
+function getRetryAfterMs(headers = {}) {
+  const retryAfter = Number.parseInt(headers['retry-after'], 10);
+  return (Number.isFinite(retryAfter) && retryAfter >= 0 ? retryAfter : DEFAULT_RETRY_AFTER_SEC) * 1000;
+}
+
+/**
+ * 모든 Riot 호출은 하나의 큐를 거친다. 429 대기도 큐 안에서 하므로 다른 호출도 함께 기다린다.
+ * options.signal이 취소되면 즉시 reject하고, 아직 실행되지 않은 요청은 건너뛴다.
+ */
+async function riotApiRequest(url, retries = 2, options = {}) {
+  const { signal } = options;
   return new Promise((resolve, reject) => {
+    if (signal) {
+      if (signal.aborted) {
+        reject(createAbortError(signal));
+        return;
+      }
+      signal.addEventListener('abort', () => reject(createAbortError(signal)), { once: true });
+    }
+
     requestQueue = requestQueue.then(async () => {
+      let lastError = null;
       for (let attempt = 0; attempt <= retries; attempt++) {
+        if (signal?.aborted) return;
         try {
           const response = await axios.get(url, {
             headers: { 'X-Riot-Token': RIOT_API_KEY() },
             timeout: 15000,
+            ...(signal ? { signal } : {}),
           });
-          await sleep(MIN_INTERVAL);
+          await sleep(Math.max(MIN_INTERVAL, getRateLimitWaitMs(response.headers)));
           resolve(response.data);
           return;
         } catch (err) {
-          if (err.response?.status === 429) {
-            const retryAfter = parseInt(err.response.headers['retry-after'] || '5', 10);
-            console.error(`⏳ Riot API 레이트 리밋. ${retryAfter}초 후 재시도...`);
-            await sleep(retryAfter * 1000);
+          lastError = err;
+          const status = err.response?.status;
+          if (status === 429) {
+            const waitMs = getRetryAfterMs(err.response.headers);
+            const isLast = attempt === retries;
+            console.error(`⏳ Riot API 레이트 리밋. ${waitMs / 1000}초 대기${isLast ? ' (재시도 소진)' : ' 후 재시도'}...`);
+            // 재시도를 다 썼으면 호출자에게는 바로 알리고, 대기는 큐에 남겨 다음 요청도 기다리게 한다
+            if (isLast) reject(err);
+            await sleep(waitMs);
             continue;
           }
-          if (err.response?.status === 404) {
+          if (status === 404) {
             resolve(null); // 404는 "없음" 의미
             return;
           }
-          if (attempt === retries) {
+          // 401/403은 재시도해도 결과가 같다
+          if (status === 401 || status === 403 || signal?.aborted || attempt === retries) {
             reject(err);
             return;
           }
           await sleep(1000);
         }
       }
+      reject(lastError);
+    }).catch((err) => {
+      // 예기치 못한 예외로 큐 체인이 끊겨 다음 요청이 영구 대기하지 않도록 한다
+      reject(err);
     });
   });
 }
@@ -67,12 +134,13 @@ async function riotApiRequest(url, retries = 2) {
 /**
  * Riot ID로 PUUID 조회
  */
-async function getAccountByRiotId(gameName, tagLine) {
+async function getAccountByRiotId(gameName, tagLine, options = {}) {
   const url = `${REGIONAL_URL}/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
-  const data = await riotApiRequest(url);
+  const data = await riotApiRequest(url, undefined, { signal: options.signal });
   if (!data) {
     const err = new Error('소환사를 찾을 수 없습니다. 게임이름#태그를 확인해주세요.');
     err.userMessage = err.message;
+    err.notFound = true;
     throw err;
   }
   return data;
@@ -105,19 +173,30 @@ async function getRankByPuuid(puuid) {
 
 /**
  * 최근 매치 ID 목록
+ * options: { queue, startTime, endTime (epoch 초), signal, throwOnNotFound }
+ * 옵션 없이 호출하면 기존과 동일하게 전체 큐 최근 매치를 조회한다.
  */
-async function getRecentMatchIds(puuid, count = 5) {
-  const url = `${REGIONAL_URL}/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?start=0&count=${count}`;
-  const data = await riotApiRequest(url);
+async function getRecentMatchIds(puuid, count = 5, options = {}) {
+  const params = new URLSearchParams({ start: '0', count: String(count) });
+  if (options.queue != null) params.set('queue', String(options.queue));
+  if (options.startTime != null) params.set('startTime', String(options.startTime));
+  if (options.endTime != null) params.set('endTime', String(options.endTime));
+  const url = `${REGIONAL_URL}/lol/match/v5/matches/by-puuid/${encodeURIComponent(puuid)}/ids?${params}`;
+  const data = await riotApiRequest(url, undefined, { signal: options.signal });
+  if (data === null && options.throwOnNotFound) {
+    const err = new Error('매치 목록을 찾을 수 없습니다.');
+    err.notFound = true;
+    throw err;
+  }
   return data || [];
 }
 
 /**
  * 매치 상세 정보
  */
-async function getMatchDetail(matchId) {
+async function getMatchDetail(matchId, options = {}) {
   const url = `${REGIONAL_URL}/lol/match/v5/matches/${encodeURIComponent(matchId)}`;
-  return await riotApiRequest(url);
+  return await riotApiRequest(url, undefined, { signal: options.signal });
 }
 
 /**
@@ -393,6 +472,7 @@ module.exports = {
   getRecentMatchIds,
   getMatchDetail,
   getMatchTimeline,
+  getRateLimitWaitMs,
   getChampionName,
   getSpellName,
   formatRank,

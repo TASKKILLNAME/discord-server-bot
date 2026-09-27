@@ -6,20 +6,98 @@ const {
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const util = require('util');
+
+function enableLocalTaskLogging() {
+  if (!process.argv.includes('--local-task')) return;
+
+  const logDirectory = path.join(__dirname, '../logs');
+  const now = new Date();
+  const getLogPath = () => {
+    const current = new Date();
+    const date = [
+      current.getFullYear(),
+      String(current.getMonth() + 1).padStart(2, '0'),
+      String(current.getDate()).padStart(2, '0'),
+    ].join('-');
+    return path.join(logDirectory, `bot-${date}.log`);
+  };
+  const pidPath = path.join(logDirectory, 'local-bot.pid.json');
+  const stopRequestPath = path.join(logDirectory, 'local-bot.stop');
+
+  fs.mkdirSync(logDirectory, { recursive: true });
+  try {
+    const stopRequestAge = Date.now() - fs.statSync(stopRequestPath).mtimeMs;
+    if (stopRequestAge > 30_000) fs.unlinkSync(stopRequestPath);
+  } catch {}
+  fs.writeFileSync(pidPath, JSON.stringify({
+    pid: process.pid,
+    startedAt: now.toISOString(),
+    executable: process.execPath,
+    entryPoint: path.resolve(process.argv[1] || __filename),
+  }));
+
+  for (const level of ['log', 'info', 'warn', 'error']) {
+    const fallback = console[level].bind(console);
+    console[level] = (...args) => {
+      try {
+        const message = util.format(...args);
+        fs.appendFileSync(getLogPath(), `[${new Date().toISOString()}] [${level}] ${message}\n`);
+      } catch (error) {
+        fallback('로컬 로그 기록 실패:', error);
+        fallback(...args);
+      }
+    };
+  }
+
+  process.once('exit', () => {
+    try {
+      const saved = JSON.parse(fs.readFileSync(pidPath, 'utf8'));
+      if (saved.pid === process.pid) fs.unlinkSync(pidPath);
+    } catch {}
+  });
+
+  console.log(`로컬 예약 작업 시작 (PID ${process.pid})`);
+  return { pidPath, stopRequestPath };
+}
+
+const localTaskControl = enableLocalTaskLogging();
 require('dotenv').config();
 
-const { startUnifiedPatchScheduler } = require('./services/unifiedPatchScheduler');
-const { startLckScheduler } = require('./services/chzzkService');
-const { startProjectMoonScheduler } = require('./services/projectMoonService');
-const { startEventScheduler } = require('./services/eventService');
+const requiredEnvironment = [
+  'DISCORD_TOKEN',
+  'CLIENT_ID',
+  'CLIENT_SECRET',
+  'DATABASE_URL',
+  'SESSION_SECRET',
+];
+const missingEnvironment = requiredEnvironment.filter((name) => !process.env[name]?.trim());
+
+if (missingEnvironment.length > 0) {
+  console.error(`❌ 필수 환경변수가 없습니다: ${missingEnvironment.join(', ')}`);
+  console.error('   npm run local:check 로 로컬 설정을 확인하세요.');
+  process.exit(1);
+}
+
+const {
+  startUnifiedPatchScheduler,
+  stopUnifiedPatchScheduler,
+} = require('./services/unifiedPatchScheduler');
+const { startLckScheduler, stopLckScheduler } = require('./services/chzzkService');
+const {
+  startProjectMoonScheduler,
+  stopProjectMoonScheduler,
+} = require('./services/projectMoonService');
+const { startEventScheduler, stopEventScheduler } = require('./services/eventService');
 const { startDashboard } = require('../dashboard/server');
 const { handleMemberJoin, handleGameSelect } = require('./services/welcomeService');
 const { addXp, createLevelUpEmbed } = require('./services/levelService');
-const { startLolTracker } = require('./services/lolTrackerService');
-const { initDb } = require('./db');
+const { startLolTracker, stopLolTracker } = require('./services/lolTrackerService');
+const { initDb, pool } = require('./db');
 const { handleVoiceStateUpdate, cleanupTempChannels } = require('./services/tempVoiceService');
 const { handleVoteButton } = require('./services/voteService');
-const { startTracker } = require('./services/activityTrackerService');
+const { startTracker, stopTracker } = require('./services/activityTrackerService');
+const { closeBrowser } = require('./services/imageService');
 const { init: initLolPsCache } = require('./services/lolPsService');
 
 // ============================================
@@ -35,6 +113,9 @@ const client = new Client({
     GatewayIntentBits.GuildPresences,
   ],
 });
+let dashboardServer = null;
+let shuttingDown = false;
+let stopRequestTimer = null;
 
 // ============================================
 // 명령어 로드
@@ -57,43 +138,48 @@ for (const file of commandFiles) {
 // 봇 준비 완료
 // ============================================
 client.once(Events.ClientReady, async (c) => {
-  console.log('\n========================================');
-  console.log(`🤖 ${c.user.tag} 봇이 온라인입니다!`);
-  console.log(`📊 ${c.guilds.cache.size}개의 서버에서 활동 중`);
-  console.log('========================================\n');
+  try {
+    console.log('\n========================================');
+    console.log(`🤖 ${c.user.tag} 봇이 온라인입니다!`);
+    console.log(`📊 ${c.guilds.cache.size}개의 서버에서 활동 중`);
+    console.log('========================================\n');
 
-  // DB 초기화
-  await initDb();
+    // DB 초기화
+    await initDb();
 
-  // 상태 메시지 설정
-  client.user.setActivity('/도움말 로 명령어 확인', { type: 3 }); // WATCHING
+    // 상태 메시지 설정
+    client.user.setActivity('/도움말 로 명령어 확인', { type: 3 }); // WATCHING
 
-  // 통합 패치노트 자동 체크 스케줄러 시작 (롤/발로란트/TFT)
-  await startUnifiedPatchScheduler(client);
+    // 통합 패치노트 자동 체크 스케줄러 시작 (롤/발로란트/TFT)
+    await startUnifiedPatchScheduler(client);
 
-  // 치지직 LCK 경기 시작 알림 스케줄러 시작
-  await startLckScheduler(client);
+    // 치지직 LCK 경기 시작 알림 스케줄러 시작
+    await startLckScheduler(client);
 
-  // Project Moon 유튜브/치지직 알림 스케줄러 시작
-  await startProjectMoonScheduler(client);
+    // Project Moon 유튜브/치지직 알림 스케줄러 시작
+    await startProjectMoonScheduler(client);
 
-  // 이벤트 알림 스케줄러 시작
-  startEventScheduler(client);
+    // 이벤트 알림 스케줄러 시작
+    startEventScheduler(client);
 
-  // 웹 대시보드 시작
-  startDashboard(client);
+    // 웹 대시보드 시작
+    dashboardServer = await startDashboard(client);
 
-  // 롤 게임 자동 감지 트래커 시작
-  startLolTracker(client);
+    // 롤 게임 자동 감지 트래커 시작
+    startLolTracker(client);
 
-  // 실시간 활동 감시
-  startTracker(client);
+    // 실시간 활동 감시
+    await startTracker(client);
 
-  // 임시 음성채널 정리 (봇 재시작 시)
-  await cleanupTempChannels(client);
+    // 임시 음성채널 정리 (봇 재시작 시)
+    await cleanupTempChannels(client);
 
-  // lol.ps 챔피언 라인별 캐시 로드 (랜덤챔피언 명령어용)
-  await initLolPsCache();
+    // lol.ps 챔피언 라인별 캐시 로드 (랜덤챔피언 명령어용)
+    await initLolPsCache();
+  } catch (error) {
+    console.error('❌ 봇 초기화 실패:', error);
+    await shutdown('초기화 실패', 1);
+  }
 });
 
 // ============================================
@@ -291,23 +377,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   }
 
-  // 버튼 처리 (서버 구성 확인/취소 + 이벤트 + 멤버십)
+  // 버튼 처리 (서버 구성 확인/취소 + 이벤트)
   if (interaction.isButton()) {
-    // 💳 멤버십 버튼 (서버: 구매 / DM: 승인·거절)
-    if (interaction.customId.startsWith('membership_')) {
-      const membershipCommand = client.commands.get('멤버십');
-      if (membershipCommand?.handleButton) {
-        try {
-          await membershipCommand.handleButton(interaction);
-        } catch (error) {
-          console.error('멤버십 버튼 오류:', error);
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ 오류가 발생했습니다.', ephemeral: true });
-          }
-        }
-      }
-      return;
-    }
 
     // 이벤트 참가/목록 버튼
     if (interaction.customId.startsWith('event_')) {
@@ -413,9 +484,72 @@ client.on('error', (error) => {
 
 process.on('unhandledRejection', (error) => {
   console.error('처리되지 않은 프로미스 거부:', error);
+  void shutdown('처리되지 않은 Promise 오류', 1);
 });
+
+process.on('uncaughtException', (error) => {
+  console.error('처리되지 않은 예외:', error);
+  void shutdown('처리되지 않은 예외', 1);
+});
+
+async function shutdown(reason, exitCode = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log(`\n⏹️ 봇 종료 중: ${reason}`);
+  const forceExit = setTimeout(() => process.exit(exitCode), 5000);
+  forceExit.unref();
+
+  try {
+    if (stopRequestTimer) clearInterval(stopRequestTimer);
+    stopUnifiedPatchScheduler();
+    stopLckScheduler();
+    stopProjectMoonScheduler();
+    stopEventScheduler();
+    stopLolTracker();
+    stopTracker();
+
+    if (dashboardServer) {
+      await new Promise((resolve, reject) => {
+        dashboardServer.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+
+    await closeBrowser();
+    await client.destroy();
+    await pool.end();
+  } catch (error) {
+    console.error('종료 처리 오류:', error);
+  } finally {
+    clearTimeout(forceExit);
+    process.exit(exitCode);
+  }
+}
+
+process.once('SIGINT', () => void shutdown('SIGINT'));
+process.once('SIGTERM', () => void shutdown('SIGTERM'));
+process.once('SIGHUP', () => void shutdown('SIGHUP'));
+process.once('beforeExit', (code) => {
+  if (!shuttingDown && code === 0) process.exitCode = 1;
+});
+
+if (localTaskControl) {
+  stopRequestTimer = setInterval(() => {
+    if (!fs.existsSync(localTaskControl.stopRequestPath)) return;
+
+    try {
+      fs.unlinkSync(localTaskControl.stopRequestPath);
+    } catch (error) {
+      console.error('로컬 중지 요청 파일 삭제 실패:', error);
+    }
+    void shutdown('로컬 중지 요청');
+  }, 1000);
+}
 
 // ============================================
 // 로그인
 // ============================================
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.DISCORD_TOKEN).catch((error) => {
+  console.error('❌ Discord 로그인 실패:', error.message);
+  void shutdown('Discord 로그인 실패', 1);
+});
