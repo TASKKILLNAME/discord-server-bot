@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "note": "특성 키: engage(교전 개시), protect(아군 보호), frontline(전열), poke(원거리 견제). 하드 CC·피해 성향은 Data Dragon에서 자동 계산하므로 여기 넣지 않는다. 아래 값은 AI 작성 초안이며 verified로 바꾸기 전에는 표시되지 않는다.",
+  "traits": {
+    "Leona": {
+      "engage": { "value": true, "evidence": "E 천공의 검으로 적에게 돌진해 교전을 연다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null },
+      "frontline": { "value": true, "evidence": "W 일식으로 방어력과 마법 저항력을 얻어 앞에서 버틴다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    },
+    "Malphite": {
+      "engage": { "value": true, "evidence": "R 멈출 수 없는 힘으로 광역 공중에 띄우기와 함께 진입한다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    },
+    "Janna": {
+      "protect": { "value": true, "evidence": "E 폭풍의 눈으로 아군에게 보호막을 준다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    },
+    "Lulu": {
+      "protect": { "value": true, "evidence": "E 도와줘, 픽스!의 보호막과 R 급성장으로 아군을 지킨다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    },
+    "Braum": {
+      "protect": { "value": true, "evidence": "E 불굴로 투사체를 막아 뒤의 아군을 보호한다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null },
+      "frontline": { "value": true, "evidence": "W 내 뒤로!로 아군 앞에 서서 방어 능력치를 얻는다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    },
+    "Xerath": {
+      "poke": { "value": true, "evidence": "Q 비전 파동과 R 비전 의식으로 먼 거리에서 피해를 준다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    },
+    "Ornn": {
+      "frontline": { "value": true, "evidence": "탱커형 챔피언으로 W 풀무질 중 저지 불가 상태로 앞에 선다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null },
+      "engage": { "value": true, "evidence": "R 대장장이 신의 부름으로 광역 공중에 띄우기를 건다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    },
+    "Sejuani": {
+      "engage": { "value": true, "evidence": "Q 북풍 돌격과 R 빙하 감옥으로 교전을 연다.", "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" }, "checkedAt": null, "reviewStatus": "draft", "reviewedBy": null }
+    }
+  }
+}

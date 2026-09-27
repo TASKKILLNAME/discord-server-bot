@@ -3,13 +3,24 @@ const {
   EmbedBuilder,
   PermissionFlagsBits,
   ChannelType,
+  escapeMarkdown,
 } = require('discord.js');
+const { fetchRecentMatchData } = require('../services/riotService');
 const {
-  fetchLiveGameData,
-  fetchRecentMatchData,
-} = require('../services/riotService');
+  BriefingError,
+  createLiveBriefing,
+  tryAcquireCooldown: tryAcquireBriefingCooldown,
+  describeErrorForLog: describeBriefingError,
+} = require('../services/liveBriefingService');
+const { renderBriefing, renderLoading, renderError } = require('../services/liveBriefingLayout');
 const {
-  analyzeLiveGame,
+  createSession,
+  getSession,
+  parseComponentId,
+  checkAccess,
+} = require('../services/liveBriefingSessions');
+const { explainBriefContent } = require('../services/liveBriefingExplainer');
+const {
   analyzeRecentMatches,
   parseAnalysisToFields,
 } = require('../services/lolAnalyzer');
@@ -27,7 +38,6 @@ const {
 } = require('../services/lolTrackerService');
 const {
   buildRecentMatchLayout,
-  buildLiveGameLayout,
   buildSingleMatchLayout,
 } = require('../services/matchLayoutService');
 const {
@@ -298,25 +308,39 @@ module.exports = {
   // ============================================
   // 🎮 실시간 게임 조회 (수동)
   // ============================================
+  // 조회 시점의 진행 중 경기 + 과거 전적으로 만든 게임 시작 브리핑.
+  // 사실 기반 화면을 먼저 보여주고, AI 설명은 검증을 통과했을 때만 덧입힌다.
   async liveGame(interaction) {
     const gameName = interaction.options.getString('소환사명');
     const tagLine = interaction.options.getString('태그');
 
+    const waitMs = tryAcquireBriefingCooldown(interaction.guildId || 'dm', interaction.user.id);
+    if (waitMs > 0) {
+      return interaction.reply({ content: `⏳ ${Math.ceil(waitMs / 1000)}초 후에 다시 시도해주세요.`, ephemeral: true });
+    }
+
     await interaction.deferReply();
 
     try {
-      const loadingEmbed = new EmbedBuilder()
-        .setTitle('🔍 실시간 게임 정보를 가져오는 중...')
-        .setDescription(
-          `**${gameName}#${tagLine}** 소환사를 검색하고 AI가 분석 중입니다.\n잠시만 기다려주세요... (약 15~40초)`
-        )
-        .setColor(0xffa500);
-      await interaction.editReply({ embeds: [loadingEmbed] });
+      await interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🔍 현재 게임을 찾는 중...')
+            .setDescription(`**${escapeMarkdown(`${gameName}#${tagLine}`)}** 소환사의 진행 중인 게임을 조회합니다.`)
+            .setColor(0xffa500),
+        ],
+        allowedMentions: NO_MENTIONS,
+      });
 
-      const gameData = await fetchLiveGameData(gameName, tagLine);
+      const model = await createLiveBriefing(
+        { gameName, tagLine },
+        {
+          onBasic: (basic) => interaction.editReply(renderLoading(basic)),
+        }
+      );
 
       // 게임 중이 아니면 → 최근 1게임으로 대체
-      if (gameData.notInGame) {
+      if (model.notInGame) {
         const recentEmbed = new EmbedBuilder()
           .setTitle('💤 현재 게임 중이 아닙니다')
           .setDescription(
@@ -345,25 +369,72 @@ module.exports = {
         return interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
       }
 
-      // 실시간 게임 분석
-      const analysis = await analyzeLiveGame(gameData);
-      const analysisFields = parseAnalysisToFields(analysis);
-
-      const layout = buildLiveGameLayout(gameData, analysisFields, gameName, tagLine);
-      await interaction.editReply({ components: layout.components, flags: layout.flags, embeds: [] });
-    } catch (err) {
-      console.error('실시간 조회 오류:', err);
-      const errorDetail = err.userMessage || err.message || '알 수 없는 오류';
-      const statusCode = err.response?.status ? ` (HTTP ${err.response.status})` : '';
-      await interaction.editReply({
-        embeds: [
-          new EmbedBuilder()
-            .setTitle('❌ 오류 발생')
-            .setDescription(`${errorDetail}${statusCode}`)
-            .setColor(0xff0000),
-        ],
+      const session = createSession({
+        ownerId: interaction.user.id,
+        guildId: interaction.guildId,
+        channelId: interaction.channelId,
+        model,
       });
+      session.explanation = { status: 'pending' };
+      const { briefing, ...payload } = renderBriefing(model, { sessionId: session.id, explanation: session.explanation });
+      const message = await interaction.editReply(payload);
+      session.messageId = message?.id || null;
+
+      // AI 설명은 기다리는 동안에도 사실 기반 화면이 이미 보인다. 실패하면 템플릿 문장 그대로 둔다.
+      session.explanation = await explainBriefContent(briefing.content);
+      if (session.view === 'home' && !session.roleOverride) {
+        const { briefing: _, ...updated } = renderBriefing(model, { sessionId: session.id, explanation: session.explanation });
+        await interaction.editReply(updated).catch((err) => console.error(`브리핑 설명 반영 실패: ${err.message}`));
+      }
+    } catch (err) {
+      console.error(`실시간 조회 오류: ${describeBriefingError(err)}`);
+      const message = err instanceof BriefingError
+        ? err.userMessage
+        : err.userMessage || '실시간 게임 조회 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+      await interaction
+        .editReply(renderError(message))
+        .catch((editErr) => console.error(`실시간 조회 응답 실패: ${editErr.message}`));
     }
+  },
+
+  // ============================================
+  // 🔘 브리핑 버튼·선택 메뉴 (Riot·AI 재호출 없음)
+  // ============================================
+  async handleBriefingComponent(interaction) {
+    const parsed = parseComponentId(interaction.customId);
+    if (!parsed) {
+      return interaction.reply({ content: '❌ 알 수 없는 요청입니다.', ephemeral: true });
+    }
+
+    const session = getSession(parsed.sessionId);
+    if (!session) {
+      // 만료된 세션: 버튼을 치우고 조작한 사람에게만 알린다
+      await interaction.update({ components: [] }).catch(() => {});
+      const notice = { content: '⌛ 브리핑 세션이 만료되었습니다. `/전적 실시간`으로 다시 조회해주세요.', ephemeral: true };
+      return interaction.replied || interaction.deferred ? interaction.followUp(notice) : interaction.reply(notice);
+    }
+
+    const denied = checkAccess(session, {
+      userId: interaction.user.id,
+      guildId: interaction.guildId,
+      messageId: interaction.message?.id,
+    });
+    if (denied) return interaction.reply({ content: `❌ ${denied}`, ephemeral: true });
+
+    if (parsed.action === 'view') {
+      session.view = parsed.view;
+    } else {
+      const value = interaction.values?.[0];
+      session.roleOverride = value && value !== 'AUTO' ? value : null;
+    }
+
+    const { briefing, ...payload } = renderBriefing(session.model, {
+      view: session.view,
+      roleOverride: session.roleOverride,
+      explanation: session.explanation,
+      sessionId: session.id,
+    });
+    return interaction.update(payload);
   },
 
   // ============================================

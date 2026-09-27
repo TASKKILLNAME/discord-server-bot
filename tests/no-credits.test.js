@@ -48,6 +48,13 @@ function loadLol(calls) {
       parseAnalysisToFields: () => [{ name: '분석', value: '정상' }],
     },
     '../services/lolTrackerService': {},
+    // /전적 실시간은 게임 시작 브리핑으로 바뀌었다. 게임 중이 아니면 기존 최근 1게임 AI 분석으로 대체한다.
+    '../services/liveBriefingService': {
+      BriefingError: class BriefingError extends Error {},
+      createLiveBriefing: async () => ({ notInGame: true, account: { gameName: 'Tester', tagLine: 'KR1' } }),
+      tryAcquireCooldown: () => 0,
+      describeErrorForLog: (err) => err.message,
+    },
     '../services/matchLayoutService': {
       buildRecentMatchLayout: () => ({ components: [{ type: 'recent' }], flags: 32768 }),
       buildLiveGameLayout: () => ({ components: [{ type: 'live' }], flags: 32768 }),
@@ -59,7 +66,7 @@ function loadLol(calls) {
 test('/전적 실시간·최근전적은 크레딧 확인 없이 AI 분석 결과를 응답한다', async () => {
   for (const [subcommand, analyzer, component] of [
     ['최근전적', 'analyzeRecentMatches', 'recent'],
-    ['실시간', 'analyzeLiveGame', 'live'],
+    ['실시간', 'analyzeRecentMatches', 'single'],
   ]) {
     const calls = [];
     const command = loadLol(calls);

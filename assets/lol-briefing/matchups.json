@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "note": "reviewStatus가 verified이고 source·checkedAt·reviewedBy가 모두 있는 항목만 /전적 실시간에 표시된다. 아래 항목은 AI가 작성한 검수 전 초안이며 표시되지 않는다.",
+  "entries": [
+    {
+      "id": "ahri-vs-zed-mid",
+      "myChampion": "Ahri",
+      "opponentChampion": "Zed",
+      "role": "MIDDLE",
+      "queues": [400, 420, 430, 440, 490],
+      "lastVerifiedPatch": null,
+      "cautions": [
+        "제드가 그림자를 먼저 깔고 들어오는 각에서는 매혹을 아껴 두고 진입 뒤에 맞히는 편이 안전하다."
+      ],
+      "options": [
+        "혼령 질주가 없을 때는 라인을 당겨 받고, 궁극기가 돌아온 뒤에 교전 합류를 고려한다."
+      ],
+      "numericClaimsSource": null,
+      "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" },
+      "checkedAt": null,
+      "reviewStatus": "draft",
+      "reviewedBy": null
+    },
+    {
+      "id": "leona-vs-any-bottom",
+      "myChampion": "Leona",
+      "opponentChampion": "*",
+      "role": "BOTTOM_DUO",
+      "queues": [400, 420, 430, 440, 490],
+      "lastVerifiedPatch": null,
+      "cautions": [
+        "상대 바텀 듀오에 이동기나 정화가 있으면 천공의 검 진입 뒤 연계가 끊길 수 있다."
+      ],
+      "options": [
+        "원딜이 따라올 수 있는 거리에서만 진입각을 잡는다."
+      ],
+      "numericClaimsSource": null,
+      "source": { "type": "ai-draft", "ref": "Claude 작성 초안 — 사람 검수 필요" },
+      "checkedAt": null,
+      "reviewStatus": "draft",
+      "reviewedBy": null
+    }
+  ]
+}

@@ -15,6 +15,8 @@ const SPELLS_CACHE = path.join(__dirname, '../../data/spells.json');
 
 let championsData = null;
 let spellsData = null;
+// 로드한 Data Dragon 버전과 그 데이터를 받은 시각 (지역 클라이언트 패치와 다를 수 있다)
+let staticDataInfo = { version: null, updatedAt: null };
 
 // ============================================
 // 🚦 레이트 리밋 관리
@@ -149,9 +151,9 @@ async function getAccountByRiotId(gameName, tagLine, options = {}) {
 /**
  * 실시간 게임 조회 (Spectator V5)
  */
-async function getLiveGame(puuid) {
+async function getLiveGame(puuid, options = {}) {
   const url = `${PLATFORM_URL}/lol/spectator/v5/active-games/by-summoner/${encodeURIComponent(puuid)}`;
-  return await riotApiRequest(url); // null이면 게임 중 아님
+  return await riotApiRequest(url, undefined, { signal: options.signal }); // null이면 게임 중 아님
 }
 
 /**
@@ -165,6 +167,23 @@ async function getSummonerByPuuid(puuid) {
 /**
  * 랭크 정보 조회 (PUUID 기반)
  */
+/**
+ * 랭크 엔트리 원본 조회. getRankByPuuid와 달리 404(null)를 빈 배열로 바꾸지 않아
+ * "정상 조회했지만 엔트리 없음"과 "조회 불가"를 호출자가 구분할 수 있다.
+ */
+async function getLeagueEntriesByPuuid(puuid, options = {}) {
+  const url = `${PLATFORM_URL}/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`;
+  return await riotApiRequest(url, undefined, { signal: options.signal });
+}
+
+/**
+ * 특정 챔피언 숙련도. 404(데이터 없음)는 null.
+ */
+async function getChampionMastery(puuid, championId, options = {}) {
+  const url = `${PLATFORM_URL}/lol/champion-mastery/v4/champion-masteries/by-puuid/${encodeURIComponent(puuid)}/by-champion/${encodeURIComponent(championId)}`;
+  return await riotApiRequest(url, undefined, { signal: options.signal });
+}
+
 async function getRankByPuuid(puuid) {
   const url = `${PLATFORM_URL}/lol/league/v4/entries/by-puuid/${encodeURIComponent(puuid)}`;
   const data = await riotApiRequest(url);
@@ -224,6 +243,7 @@ async function initStaticData() {
       if (cacheAge < 24 * 60 * 60 * 1000) {
         championsData = champFile.champions;
         spellsData = spellFile.spells;
+        staticDataInfo = { version: champFile.version || null, updatedAt: champFile.updatedAt || null };
         console.log('📦 챔피언/스펠 데이터 캐시 로드 완료');
         return;
       }
@@ -274,6 +294,7 @@ async function initStaticData() {
 
     championsData = champions;
     spellsData = spells;
+    staticDataInfo = { version, updatedAt: new Date().toISOString() };
     console.log(`✅ 챔피언 ${Object.keys(champions).length}개, 스펠 ${Object.keys(spells).length}개 로드 완료`);
   } catch (err) {
     console.error('❌ Data Dragon 로드 실패:', err.message);
@@ -285,6 +306,15 @@ async function initStaticData() {
 
 function getChampionName(championId) {
   return championsData?.[String(championId)]?.name || `챔피언(${championId})`;
+}
+
+/** Data Dragon 챔피언 ID (예: 'Ahri'). 정적 데이터가 없으면 null */
+function getChampionDataId(championId) {
+  return championsData?.[String(championId)]?.id || null;
+}
+
+function getStaticDataInfo() {
+  return { ...staticDataInfo };
 }
 
 function getChampionImage(championId) {
@@ -469,11 +499,16 @@ module.exports = {
   getLiveGame,
   getSummonerByPuuid,
   getRankByPuuid,
+  getLeagueEntriesByPuuid,
+  getChampionMastery,
   getRecentMatchIds,
   getMatchDetail,
   getMatchTimeline,
   getRateLimitWaitMs,
   getChampionName,
+  getChampionDataId,
+  getChampionImage,
+  getStaticDataInfo,
   getSpellName,
   formatRank,
   fetchLiveGameData,

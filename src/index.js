@@ -96,6 +96,7 @@ const { startLolTracker, stopLolTracker } = require('./services/lolTrackerServic
 const { initDb, pool } = require('./db');
 const { handleVoiceStateUpdate, cleanupTempChannels } = require('./services/tempVoiceService');
 const { handleVoteButton } = require('./services/voteService');
+const { isBriefingComponent } = require('./services/liveBriefingSessions');
 const { startTracker, stopTracker } = require('./services/activityTrackerService');
 const { closeBrowser } = require('./services/imageService');
 const { init: initLolPsCache } = require('./services/lolPsService');
@@ -352,6 +353,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
         await interaction.reply(errorMsg);
       }
     }
+  }
+
+  // 🎮 /전적 실시간 브리핑 버튼·포지션 선택
+  if ((interaction.isButton() || interaction.isStringSelectMenu()) && isBriefingComponent(interaction.customId)) {
+    const lolCommand = client.commands.get('전적');
+    try {
+      await lolCommand?.handleBriefingComponent(interaction);
+    } catch (error) {
+      console.error('브리핑 버튼 오류:', error.message);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: '❌ 오류가 발생했습니다.', ephemeral: true }).catch(() => {});
+      }
+    }
+    return;
   }
 
   // 셀렉트 메뉴 처리 (서버 구성 템플릿 선택 + 게임 역할 선택)
