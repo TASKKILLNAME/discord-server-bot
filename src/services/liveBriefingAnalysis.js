@@ -29,6 +29,9 @@ const BRIEFING_CONFIG = Object.freeze({
   // 태그
   mainRoleMinGames: 5, // 주 포지션 판정 최소 경기
   mainRoleShare: 0.6, // 주 포지션 판정 최소 비율
+  mainsRoleMinGames: 3, // 주챔(숙련도 상위) 경기로 주 포지션을 볼 때 최소 경기
+  mainsRoleShare: 0.8, //  〃 최소 비율
+  roleCheckGames: 12, // 주 포지션이 애매한 참가자를 먼저 보강하는 표본 크기
   streakTagMin: 3, // #N연승/#N연패 표시 최소
   masteryTagGames: 10, // #장인: 수집 경기 중 현재 챔피언 10경기 이상이면서
   masteryTagShare: 0.5, //        절반 이상
@@ -276,13 +279,32 @@ function computeStreak(results) {
   return count > 0 ? { win: first === 'W', count, atLeast: true } : null;
 }
 
-/** 주 포지션: 포지션 기록 mainRoleMinGames 이상, 한 포지션 비율 mainRoleShare 이상 */
-function mainRoleOf(positions) {
+/** 포지션 분포에서 minGames 이상·share 이상인 포지션. 없으면 null */
+function dominantRole(positions, minGames, share) {
   const valid = ROLES.reduce((s, r) => s + positions[r], 0);
-  if (valid < BRIEFING_CONFIG.mainRoleMinGames) return null;
+  if (valid < minGames) return null;
   let best = null;
   for (const r of ROLES) if (!best || positions[r] > positions[best]) best = r;
-  return positions[best] >= valid * BRIEFING_CONFIG.mainRoleShare ? best : null;
+  return positions[best] >= valid * share ? best : null;
+}
+
+/** 주 포지션: 포지션 기록 mainRoleMinGames 이상, 한 포지션 비율 mainRoleShare 이상 */
+function mainRoleOf(positions) {
+  return dominantRole(positions, BRIEFING_CONFIG.mainRoleMinGames, BRIEFING_CONFIG.mainRoleShare);
+}
+
+/**
+ * 최근 표본만으로 주 포지션을 못 정했을 때: 주챔(숙련도 상위) 경기들의 포지션으로 본다.
+ * championPositions: { [championId]: positions }, championIds: 주챔 ID 목록
+ */
+function mainRoleFromChampions(championPositions, championIds) {
+  const merged = emptyPositions();
+  for (const id of championIds || []) {
+    const positions = championPositions?.[id];
+    if (!positions) continue;
+    for (const r of ROLES) merged[r] += positions[r];
+  }
+  return dominantRole(merged, BRIEFING_CONFIG.mainsRoleMinGames, BRIEFING_CONFIG.mainsRoleShare);
 }
 
 /**
@@ -319,6 +341,13 @@ function aggregateHistory(history, currentChampionId) {
   const excludedTotal = Object.values(excluded).reduce((s, n) => s + n, 0);
   const spyGames = games.filter((g) => g.spy !== null && g.spy !== undefined);
   const spies = spyGames.filter((g) => g.spy).length;
+  const championPositions = {};
+  for (const g of games) {
+    if (!g.teamPosition) continue;
+    championPositions[g.championId] = championPositions[g.championId] || emptyPositions();
+    championPositions[g.championId][g.teamPosition]++;
+  }
+  const mainRole = mainRoleOf(all.positions);
 
   return {
     idsFound: ids.length,
@@ -331,7 +360,9 @@ function aggregateHistory(history, currentChampionId) {
     results,
     streak: computeStreak(results),
     champion,
-    mainRole: mainRoleOf(all.positions),
+    championPositions,
+    mainRole,
+    mainRoleSource: mainRole ? 'history' : null,
     recent: games.slice(0, BRIEFING_CONFIG.recentIcons).map((g) => ({ championId: g.championId, win: g.win })),
     spy: {
       samples: spyGames.length,
@@ -670,6 +701,7 @@ module.exports = {
   combinedKda,
   computeStreak,
   mainRoleOf,
+  mainRoleFromChampions,
   aggregateHistory,
   roleScoresFor,
   assignTeamRoles,

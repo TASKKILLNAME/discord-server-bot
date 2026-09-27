@@ -10,7 +10,7 @@ const {
   TextDisplayBuilder,
   escapeMarkdown,
 } = require('discord.js');
-const { formatPermil, formatPercentPermil, formatKda, formatTenths } = require('./liveBriefingAnalysis');
+const { ROLE_LABELS, formatPermil, formatPercentPermil, formatKda, formatTenths } = require('./liveBriefingAnalysis');
 
 // ============================================
 // 💬 /전적 실시간 Discord 메시지 (Components V2)
@@ -71,6 +71,9 @@ function recordLine(p, settings) {
 
 function extraLine(p) {
   const parts = [];
+  if (p.stats?.mainRole) {
+    parts.push(`주 포지션 ${ROLE_LABELS[p.stats.mainRole]}${p.stats.mainRoleSource === 'mains' ? '(주챔 기준)' : ''}`);
+  }
   if (p.mains.length) parts.push(`주챔 ${p.mains.map((m) => safeText(m.name, 12)).join('·')}`);
   const spy = p.stats?.spy;
   if (spy?.ratePermil !== null && spy?.ratePermil !== undefined) {

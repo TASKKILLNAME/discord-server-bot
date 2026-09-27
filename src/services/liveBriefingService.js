@@ -6,6 +6,7 @@ const {
   compactMatch,
   evaluateMatchFor,
   aggregateHistory,
+  mainRoleFromChampions,
   buildPerspective,
   isHistoryQueue,
   rankQueueTypeFor,
@@ -24,8 +25,8 @@ const { BoundedTtlCache } = require('../utils/boundedTtlCache');
 const LIVE_CONFIG = Object.freeze({
   platformId: 'KR',
   regionalRoute: 'asia',
-  maxNewMatchDetails: 80, // 한 요청이 새로 가져오는 경기 상세 상한 (Riot 보장 한도가 아니라 봇 자체 상한)
-  maxRiotCalls: 140, // 한 요청의 전체 Riot 호출 상한 (ID·랭크·숙련도·상세 포함, 공유 요청 합류는 제외)
+  maxNewMatchDetails: 110, // 한 요청이 새로 가져오는 경기 상세 상한 (Riot 보장 한도가 아니라 봇 자체 상한)
+  maxRiotCalls: 170, // 한 요청의 전체 Riot 호출 상한 (ID·랭크·숙련도·상세 포함, 공유 요청 합류는 제외)
   concurrency: 3, // 공통 큐를 다른 기능과 나눠 쓰도록 동시에 넣는 요청 수 제한
   deadlineMs: 45 * 1000, // 계정·현재 게임 조회부터 수집 종료까지 전체 기한
   quickPhaseMs: 20 * 1000, // 1차(랭크·경기 ID·빠른 표본) 기한
@@ -461,6 +462,11 @@ function snapshotParticipants(base, collection, game) {
     const stats = history.status === 'ok' ? aggregateHistory(history, p.championId) : null;
     const rank = !isLookupTarget(p) ? { status: p.bot ? 'bot' : 'hidden' } : state?.rank || { status: 'skipped' };
     const topMasteries = !isLookupTarget(p) ? null : state?.mastery || { status: 'skipped' };
+    // 최근 표본만으로 주 포지션을 못 정하면 주챔(숙련도 상위) 경기의 포지션으로 본다
+    if (stats && !stats.mainRole && topMasteries?.status === 'ok') {
+      const role = mainRoleFromChampions(stats.championPositions, topMasteries.champions.map((c) => c.championId));
+      if (role) Object.assign(stats, { mainRole: role, mainRoleSource: 'mains' });
+    }
     return { ...p, rank, history: { status: history.status, reason: history.reason }, stats, topMasteries };
   });
 }
@@ -523,8 +529,10 @@ async function collect(ctx, collection, game, base, targetPuuid, settings) {
     quick.dispose();
   }
 
-  // 2차: 조회 대상과 상대 후보를 목표 표본까지 보강 → 3차: 나머지 참가자 (남은 예산·기한 안에서)
-  const perspective = buildPerspective({ game, participants: snapshotParticipants(base, collection, game), targetPuuid });
+  // 2차: 주 포지션이 애매하거나 추정 포지션과 다른 참가자(#라인꼬임 판단) → 3차: 조회 대상·상대 후보 목표 표본
+  // → 4차: 나머지 참가자 (남은 예산·기한 안에서)
+  const snapshot = snapshotParticipants(base, collection, game);
+  const perspective = buildPerspective({ game, participants: snapshot, targetPuuid });
   const priority = perspective.mode === 'personal'
     ? [perspective.target, ...(perspective.lane.opponents || []), ...(perspective.lane.allyDuo || [])]
     : [];
@@ -532,6 +540,18 @@ async function collect(ctx, collection, game, base, targetPuuid, settings) {
 
   const rest = phaseSignal(ctx.signal, ctx.deadlineAt - Date.now() - ctx.reserveMs);
   try {
+    if (historyEnabled && perspective.roleSupported) {
+      const ambiguous = snapshot.filter((p) => {
+        if (!isLookupTarget(p) || !p.stats) return false;
+        const role = perspective.roles.get(p.slot);
+        return !p.stats.mainRole || (role?.role && role.role !== p.stats.mainRole);
+      });
+      await runPool(
+        interleave(ambiguous.map((p) => detailTasks(ctx, rest.signal, playerState(collection, p.puuid), p.puuid, BRIEFING_CONFIG.roleCheckGames, evalOptions))),
+        LIVE_CONFIG.concurrency,
+        rest.signal
+      );
+    }
     if (historyEnabled) {
       const priorityList = lookups.filter((p) => priorityIds.has(p.puuid));
       await runPool(

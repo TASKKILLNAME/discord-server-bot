@@ -1,5 +1,5 @@
 const imageService = require('./imageService');
-const { formatPermil, formatPercentPermil, formatKda, formatTenths } = require('./liveBriefingAnalysis');
+const { ROLE_LABELS, formatPermil, formatPercentPermil, formatKda, formatTenths } = require('./liveBriefingAnalysis');
 
 // ============================================
 // 🖼️ /전적 실시간 카드 이미지 (PS 스타일 라인별 맞대결)
@@ -70,8 +70,9 @@ function sideHtml(p, mirror) {
     ? `<span class="lbl">주챔</span>${p.mains.map((m) => img(m.icon, 'mi', m.name)).join('')}`
     : '';
   const tags = p.tags.map((t) => `<span class="tag ${t.tone}">${esc(t.text)}</span>`).join('');
+  const mainRole = s?.mainRole ? ` · 주 ${esc(ROLE_LABELS[s.mainRole])}` : '';
   const overall = s && s.collected > 0
-    ? `최근 ${esc(s.collected)}게임 ${pct(s.winPermil)} · ${esc(formatKda(s.kda))}`
+    ? `최근 ${esc(s.collected)}게임 ${pct(s.winPermil)} · ${esc(formatKda(s.kda))}${mainRole}`
     : '';
 
   return `

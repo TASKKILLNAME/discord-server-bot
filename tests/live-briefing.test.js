@@ -46,6 +46,9 @@ const CHAMPS = {
   51: { dataId: 'Caitlyn', name: '케이틀린', lean: 'physical' },
   99: { dataId: 'Lux', name: '럭스', lean: 'magic' },
   1: { dataId: 'Annie', name: '애니', lean: 'magic' },
+  62: { dataId: 'MonkeyKing', name: '오공', lean: 'physical' },
+  96: { dataId: 'KogMaw', name: '코그모', lean: 'physical' },
+  131: { dataId: 'Diana', name: '다이애나', lean: 'magic' },
 };
 const FLASH = 4;
 const SMITE = 11;
@@ -522,6 +525,45 @@ test('7-2. 실제 수집 흐름에서 주 포지션이 미드인 두 사람이 �
   const players = view.rows.flatMap((r) => [r.left, r.right]).filter(Boolean);
   const tagged = players.filter((p) => p.tags.some((t) => t.text.startsWith('#라인꼬임')));
   assert.deepEqual(tagged.map((p) => p.championName).sort(), ['아리', '징크스'].sort());
+});
+
+test('7-3. [회귀] 원딜 원챔 유저가 정글을 하면, 조회 대상·맞라인이 아니어도 #라인꼬임이 붙는다', async () => {
+  // 실제 제보 사례 재현: 최근 6판은 정글 3·원딜 3, 20판 전체는 원딜(코그모) 14·정글 6, 숙련도 1위 코그모
+  const lineup = LINEUP.map((p) => (p.puuid === 'p-blue-jg' ? { ...p, championId: 62 } : p));
+  const world = buildWorld(lineup);
+  const pattern = ['JUNGLE', 'BOTTOM', 'BOTTOM', 'BOTTOM', 'JUNGLE', 'JUNGLE', 'BOTTOM', 'BOTTOM', 'BOTTOM', 'BOTTOM',
+    'BOTTOM', 'JUNGLE', 'JUNGLE', 'BOTTOM', 'BOTTOM', 'BOTTOM', 'BOTTOM', 'BOTTOM', 'BOTTOM', 'JUNGLE'];
+  world.ids['p-blue-jg'].forEach((id, i) => {
+    const role = pattern[i];
+    world.details[id] = matchDetail(id, 'p-blue-jg', {
+      championId: role === 'BOTTOM' ? 96 : i === 0 || i === 4 ? 62 : 131,
+      teamPosition: role,
+      win: role === 'BOTTOM',
+      endMs: NOW - (i + 1) * 60 * 60 * 1000,
+    });
+  });
+  const { model } = await modelFor('p-red-mid', {
+    lineup,
+    live: liveGameFrom(lineup),
+    ...world,
+    masteries: { 'p-blue-jg': [{ championId: 96, championPoints: 2676591, championLevel: 90 }] },
+  });
+  const view = buildLiveGameView(model);
+  const kog = view.rows.flatMap((r) => [r.left, r.right]).find((p) => p.championName === '오공');
+  assert.equal(kog.role.role, 'JUNGLE');
+  assert.equal(kog.stats.mainRole, 'BOTTOM');
+  assert.ok(kog.stats.collected >= 12, `표본 ${kog.stats.collected}판`);
+  assert.deepEqual(kog.tags.map((t) => t.text).filter((t) => t.startsWith('#라인')), ['#라인꼬임']);
+  assert.match(layout.playerBlock(kog, view.settings), /주 포지션 원딜/);
+
+  // 6판 표본(정글 3·원딜 3)만 있어도 주챔(코그모) 경기가 전부 원딜이면 주 포지션을 원딜로 본다
+  const six = analysis.aggregateHistory(
+    { ids: world.ids['p-blue-jg'].slice(0, 6), entries: world.ids['p-blue-jg'].slice(0, 6).map((id) => ({ matchId: id, ...analysis.evaluateMatchFor(analysis.compactMatch(world.details[id], id), 'p-blue-jg', { queueId: 420, cutoffMs: 0 }) })) },
+    62
+  );
+  assert.equal(six.mainRole, null);
+  assert.equal(analysis.mainRoleFromChampions(six.championPositions, [96]), 'BOTTOM');
+  assert.equal(analysis.mainRoleFromChampions(six.championPositions, [131]), null, '2판은 부족');
 });
 
 // ============================================
